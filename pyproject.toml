@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credit-review"
+version = "0.1.0"
+description = "Evidence-constrained financial credit report review workflow"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+graph = ["langgraph>=1.0,<2.0"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+test = ["pytest>=8"]
+deepseek = ["openai>=1.0"]
+rag = [
+    "numpy>=1.26,<3",
+    "bm25s>=0.3,<1",
+    "sentence-transformers>=5,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+credit-review-api = "credit_review.api.server:run"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

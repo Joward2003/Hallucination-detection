@@ -1,0 +1,951 @@
+{
+  "original_input": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。\n\n公司2024年资产负债率为45%，整体偿债风险处于较低水平。\n",
+  "fact_groups": [
+    {
+      "parent": {
+        "parent_id": "P001",
+        "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+        "source_start": 0,
+        "source_end": 55
+      },
+      "children": [
+        {
+          "fact_id": "F00101",
+          "parent_id": "P001",
+          "fact": "星河制造股份有限公司（600001）2024年营业收入同比增长20%",
+          "source_start": 0,
+          "source_end": 34
+        },
+        {
+          "fact_id": "F00102",
+          "parent_id": "P001",
+          "fact": "海外市场拓展和新产品放量共同共同构成公司营业收入增长的主要驱动因素",
+          "source_start": 0,
+          "source_end": 55
+        }
+      ]
+    },
+    {
+      "parent": {
+        "parent_id": "P002",
+        "parent_text": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+        "source_start": 57,
+        "source_end": 87
+      },
+      "children": [
+        {
+          "fact_id": "F00201",
+          "parent_id": "P002",
+          "fact": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+          "source_start": 57,
+          "source_end": 87
+        }
+      ]
+    }
+  ],
+  "flat_children": [
+    {
+      "parent": {
+        "parent_id": "P001",
+        "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+        "source_start": 0,
+        "source_end": 55
+      },
+      "child": {
+        "fact_id": "F00101",
+        "parent_id": "P001",
+        "fact": "星河制造股份有限公司（600001）2024年营业收入同比增长20%",
+        "source_start": 0,
+        "source_end": 34
+      }
+    },
+    {
+      "parent": {
+        "parent_id": "P001",
+        "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+        "source_start": 0,
+        "source_end": 55
+      },
+      "child": {
+        "fact_id": "F00102",
+        "parent_id": "P001",
+        "fact": "海外市场拓展和新产品放量共同共同构成公司营业收入增长的主要驱动因素",
+        "source_start": 0,
+        "source_end": 55
+      }
+    },
+    {
+      "parent": {
+        "parent_id": "P002",
+        "parent_text": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+        "source_start": 57,
+        "source_end": 87
+      },
+      "child": {
+        "fact_id": "F00201",
+        "parent_id": "P002",
+        "fact": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+        "source_start": 57,
+        "source_end": 87
+      }
+    }
+  ],
+  "completed_results": [
+    {
+      "status": "SUPPORTED",
+      "reason": "E0002明确记载公司2024年营业收入同比增长20%，与Child Fact一致。",
+      "evidence_ids": [
+        "E0002"
+      ],
+      "confidence": "high",
+      "counter_evidence_ids": [],
+      "fact_id": "F00101",
+      "fact": "星河制造股份有限公司（600001）2024年营业收入同比增长20%",
+      "parent_id": "P001",
+      "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+      "queries": [
+        {
+          "query_id": "Q-F00101-0-1",
+          "fact_id": "F00101",
+          "query_text": "星河制造股份有限公司 600001 2024 营业收入 同比增长 20%",
+          "retrieval_type": "text",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        },
+        {
+          "query_id": "Q-F00101-0-2",
+          "fact_id": "F00101",
+          "query_text": "星河制造 2024 年年度报告 营业收入 增长原因 海外市场 新产品",
+          "retrieval_type": "text",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        },
+        {
+          "query_id": "Q-F00101-0-3",
+          "fact_id": "F00101",
+          "query_text": "星河制造 600001 2024 营业收入 同比 增长率",
+          "retrieval_type": "table",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "E0002",
+          "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.5833,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+          "query_id": "Q-F00101-0-1"
+        },
+        {
+          "evidence_id": "E0001",
+          "content": "星河制造股份有限公司2024年年度报告",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.5,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+          "query_id": "Q-F00101-0-1"
+        },
+        {
+          "evidence_id": "E0003",
+          "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "table",
+          "score": 0.0833,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+          "query_id": "Q-F00101-0-1"
+        }
+      ],
+      "assessments": [
+        {
+          "evidence_id": "E0002",
+          "relation": "SUPPORTS",
+          "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0001",
+          "relation": "SUPPORTS",
+          "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0003",
+          "relation": "IRRELEVANT",
+          "rationale": "与 Child 的可识别信息重合不足。",
+          "usable": false
+        }
+      ],
+      "retry_count": 0,
+      "numeric_checks": [
+        {
+          "check_id": "numeric-F00101-1",
+          "expression": "reported change compared with external change",
+          "operands": {
+            "expected": "20"
+          },
+          "units": {
+            "change": "%"
+          },
+          "periods": {},
+          "expected": "20",
+          "observed": [
+            "增长",
+            "20",
+            "%",
+            "{'2024'}"
+          ],
+          "tolerance": "0.01",
+          "passed": true,
+          "failure_reason": null
+        }
+      ],
+      "rule_hits": [],
+      "critic_verdict": null,
+      "risk_decision": {
+        "next_step": "finalize",
+        "risk_level": "low",
+        "reason_codes": []
+      }
+    },
+    {
+      "status": "SUPPORTED",
+      "reason": "E0002明确表述海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素，与Child Fact一致。",
+      "evidence_ids": [
+        "E0002"
+      ],
+      "confidence": "high",
+      "counter_evidence_ids": [],
+      "fact_id": "F00102",
+      "fact": "海外市场拓展和新产品放量共同共同构成公司营业收入增长的主要驱动因素",
+      "parent_id": "P001",
+      "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+      "queries": [
+        {
+          "query_id": "Q-F00102-0-1",
+          "fact_id": "F00102",
+          "query_text": "星河制造股份有限公司 2024 营业收入 同比增长 海外市场 新产品",
+          "retrieval_type": "text",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        },
+        {
+          "query_id": "Q-F00102-0-2",
+          "fact_id": "F00102",
+          "query_text": "星河制造 2024 年年度报告 营业收入 增长 驱动因素",
+          "retrieval_type": "text",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        },
+        {
+          "query_id": "Q-F00102-0-3",
+          "fact_id": "F00102",
+          "query_text": "星河制造 2024 营业收入 同比 增长 20% 海外市场 新产品 放量",
+          "retrieval_type": "table",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "E0002",
+          "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.6154,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+          "query_id": "Q-F00102-0-1"
+        },
+        {
+          "evidence_id": "E0001",
+          "content": "星河制造股份有限公司2024年年度报告",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.4615,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+          "query_id": "Q-F00102-0-1"
+        },
+        {
+          "evidence_id": "E0003",
+          "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "table",
+          "score": 0.0769,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+          "query_id": "Q-F00102-0-1"
+        }
+      ],
+      "assessments": [
+        {
+          "evidence_id": "E0002",
+          "relation": "SUPPORTS",
+          "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0001",
+          "relation": "SUPPORTS",
+          "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0003",
+          "relation": "IRRELEVANT",
+          "rationale": "与 Child 的可识别信息重合不足。",
+          "usable": false
+        }
+      ],
+      "retry_count": 0,
+      "numeric_checks": [],
+      "rule_hits": [],
+      "critic_verdict": null,
+      "risk_decision": {
+        "next_step": "finalize",
+        "risk_level": "low",
+        "reason_codes": []
+      }
+    },
+    {
+      "status": "CONTRADICTED",
+      "reason": "外部证据E0003显示2024年末资产负债率为52%，与Child声称的45%直接矛盾，故该事实不成立。",
+      "evidence_ids": [
+        "E0003"
+      ],
+      "confidence": "high",
+      "counter_evidence_ids": [],
+      "fact_id": "F00201",
+      "fact": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+      "parent_id": "P002",
+      "parent_text": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+      "queries": [
+        {
+          "query_id": "Q-F00201-0-1",
+          "fact_id": "F00201",
+          "query_text": "公司2024年资产负债率 45% 偿债风险",
+          "retrieval_type": "text",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        },
+        {
+          "query_id": "Q-F00201-0-2",
+          "fact_id": "F00201",
+          "query_text": "2024年资产负债率 偿债风险 较低",
+          "retrieval_type": "table",
+          "attempt": 0,
+          "filters": {
+            "company": {}
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "E0001",
+          "content": "星河制造股份有限公司2024年年度报告",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.25,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+          "query_id": "Q-F00201-0-1"
+        },
+        {
+          "evidence_id": "E0002",
+          "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "text",
+          "score": 0.25,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+          "query_id": "Q-F00201-0-1"
+        },
+        {
+          "evidence_id": "E0003",
+          "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+          "source": "annual_report_2024.txt",
+          "page": null,
+          "evidence_type": "table",
+          "score": 0.125,
+          "table_name": null,
+          "row": null,
+          "column": null,
+          "document_id": "doc-annual_report_2024",
+          "document_version": "v1",
+          "company_id": null,
+          "period": "2024",
+          "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+          "query_id": "Q-F00201-0-1"
+        }
+      ],
+      "assessments": [
+        {
+          "evidence_id": "E0001",
+          "relation": "PARTIALLY_SUPPORTS",
+          "rationale": "证据部分相关，但不足以单独支持完整 Child。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0002",
+          "relation": "PARTIALLY_SUPPORTS",
+          "rationale": "证据部分相关，但不足以单独支持完整 Child。",
+          "usable": true
+        },
+        {
+          "evidence_id": "E0003",
+          "relation": "IRRELEVANT",
+          "rationale": "与 Child 的可识别信息重合不足。",
+          "usable": false
+        }
+      ],
+      "retry_count": 0,
+      "numeric_checks": [],
+      "rule_hits": [],
+      "critic_verdict": null,
+      "risk_decision": {
+        "next_step": "finalize",
+        "risk_level": "low",
+        "reason_codes": []
+      }
+    }
+  ],
+  "child_index": 3,
+  "workflow_status": "COMPLETED",
+  "company_info": null,
+  "current_parent": {},
+  "current_fact": {},
+  "current_queries": [],
+  "current_evidence": [],
+  "evidence_status": null,
+  "retry_count": 0,
+  "current_assessments": [],
+  "verification_result": null,
+  "initial_verdict": null,
+  "critic_verdict": null,
+  "numeric_checks": [],
+  "rule_hits": [],
+  "risk_decision": null,
+  "human_task": null,
+  "review_result": {
+    "status": "COMPLETED",
+    "company_info": null,
+    "fact_groups": [
+      {
+        "parent": {
+          "parent_id": "P001",
+          "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+          "source_start": 0,
+          "source_end": 55
+        },
+        "children": [
+          {
+            "fact_id": "F00101",
+            "parent_id": "P001",
+            "fact": "星河制造股份有限公司（600001）2024年营业收入同比增长20%",
+            "source_start": 0,
+            "source_end": 34
+          },
+          {
+            "fact_id": "F00102",
+            "parent_id": "P001",
+            "fact": "海外市场拓展和新产品放量共同共同构成公司营业收入增长的主要驱动因素",
+            "source_start": 0,
+            "source_end": 55
+          }
+        ]
+      },
+      {
+        "parent": {
+          "parent_id": "P002",
+          "parent_text": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+          "source_start": 57,
+          "source_end": 87
+        },
+        "children": [
+          {
+            "fact_id": "F00201",
+            "parent_id": "P002",
+            "fact": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+            "source_start": 57,
+            "source_end": 87
+          }
+        ]
+      }
+    ],
+    "completed_results": [
+      {
+        "status": "SUPPORTED",
+        "reason": "E0002明确记载公司2024年营业收入同比增长20%，与Child Fact一致。",
+        "evidence_ids": [
+          "E0002"
+        ],
+        "confidence": "high",
+        "counter_evidence_ids": [],
+        "fact_id": "F00101",
+        "fact": "星河制造股份有限公司（600001）2024年营业收入同比增长20%",
+        "parent_id": "P001",
+        "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+        "queries": [
+          {
+            "query_id": "Q-F00101-0-1",
+            "fact_id": "F00101",
+            "query_text": "星河制造股份有限公司 600001 2024 营业收入 同比增长 20%",
+            "retrieval_type": "text",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          },
+          {
+            "query_id": "Q-F00101-0-2",
+            "fact_id": "F00101",
+            "query_text": "星河制造 2024 年年度报告 营业收入 增长原因 海外市场 新产品",
+            "retrieval_type": "text",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          },
+          {
+            "query_id": "Q-F00101-0-3",
+            "fact_id": "F00101",
+            "query_text": "星河制造 600001 2024 营业收入 同比 增长率",
+            "retrieval_type": "table",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "E0002",
+            "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.5833,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+            "query_id": "Q-F00101-0-1"
+          },
+          {
+            "evidence_id": "E0001",
+            "content": "星河制造股份有限公司2024年年度报告",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.5,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+            "query_id": "Q-F00101-0-1"
+          },
+          {
+            "evidence_id": "E0003",
+            "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "table",
+            "score": 0.0833,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+            "query_id": "Q-F00101-0-1"
+          }
+        ],
+        "assessments": [
+          {
+            "evidence_id": "E0002",
+            "relation": "SUPPORTS",
+            "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0001",
+            "relation": "SUPPORTS",
+            "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0003",
+            "relation": "IRRELEVANT",
+            "rationale": "与 Child 的可识别信息重合不足。",
+            "usable": false
+          }
+        ],
+        "retry_count": 0,
+        "numeric_checks": [
+          {
+            "check_id": "numeric-F00101-1",
+            "expression": "reported change compared with external change",
+            "operands": {
+              "expected": "20"
+            },
+            "units": {
+              "change": "%"
+            },
+            "periods": {},
+            "expected": "20",
+            "observed": [
+              "增长",
+              "20",
+              "%",
+              "{'2024'}"
+            ],
+            "tolerance": "0.01",
+            "passed": true,
+            "failure_reason": null
+          }
+        ],
+        "rule_hits": [],
+        "critic_verdict": null,
+        "risk_decision": {
+          "next_step": "finalize",
+          "risk_level": "low",
+          "reason_codes": []
+        }
+      },
+      {
+        "status": "SUPPORTED",
+        "reason": "E0002明确表述海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素，与Child Fact一致。",
+        "evidence_ids": [
+          "E0002"
+        ],
+        "confidence": "high",
+        "counter_evidence_ids": [],
+        "fact_id": "F00102",
+        "fact": "海外市场拓展和新产品放量共同共同构成公司营业收入增长的主要驱动因素",
+        "parent_id": "P001",
+        "parent_text": "星河制造股份有限公司（600001）2024年营业收入同比增长20%，主要受海外市场拓展和新产品放量共同带动。",
+        "queries": [
+          {
+            "query_id": "Q-F00102-0-1",
+            "fact_id": "F00102",
+            "query_text": "星河制造股份有限公司 2024 营业收入 同比增长 海外市场 新产品",
+            "retrieval_type": "text",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          },
+          {
+            "query_id": "Q-F00102-0-2",
+            "fact_id": "F00102",
+            "query_text": "星河制造 2024 年年度报告 营业收入 增长 驱动因素",
+            "retrieval_type": "text",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          },
+          {
+            "query_id": "Q-F00102-0-3",
+            "fact_id": "F00102",
+            "query_text": "星河制造 2024 营业收入 同比 增长 20% 海外市场 新产品 放量",
+            "retrieval_type": "table",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "E0002",
+            "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.6154,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+            "query_id": "Q-F00102-0-1"
+          },
+          {
+            "evidence_id": "E0001",
+            "content": "星河制造股份有限公司2024年年度报告",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.4615,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+            "query_id": "Q-F00102-0-1"
+          },
+          {
+            "evidence_id": "E0003",
+            "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "table",
+            "score": 0.0769,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+            "query_id": "Q-F00102-0-1"
+          }
+        ],
+        "assessments": [
+          {
+            "evidence_id": "E0002",
+            "relation": "SUPPORTS",
+            "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0001",
+            "relation": "SUPPORTS",
+            "rationale": "证据包含 Child 的主体、指标、期间或数值信息。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0003",
+            "relation": "IRRELEVANT",
+            "rationale": "与 Child 的可识别信息重合不足。",
+            "usable": false
+          }
+        ],
+        "retry_count": 0,
+        "numeric_checks": [],
+        "rule_hits": [],
+        "critic_verdict": null,
+        "risk_decision": {
+          "next_step": "finalize",
+          "risk_level": "low",
+          "reason_codes": []
+        }
+      },
+      {
+        "status": "CONTRADICTED",
+        "reason": "外部证据E0003显示2024年末资产负债率为52%，与Child声称的45%直接矛盾，故该事实不成立。",
+        "evidence_ids": [
+          "E0003"
+        ],
+        "confidence": "high",
+        "counter_evidence_ids": [],
+        "fact_id": "F00201",
+        "fact": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+        "parent_id": "P002",
+        "parent_text": "公司2024年资产负债率为45%，整体偿债风险处于较低水平。",
+        "queries": [
+          {
+            "query_id": "Q-F00201-0-1",
+            "fact_id": "F00201",
+            "query_text": "公司2024年资产负债率 45% 偿债风险",
+            "retrieval_type": "text",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          },
+          {
+            "query_id": "Q-F00201-0-2",
+            "fact_id": "F00201",
+            "query_text": "2024年资产负债率 偿债风险 较低",
+            "retrieval_type": "table",
+            "attempt": 0,
+            "filters": {
+              "company": {}
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "E0001",
+            "content": "星河制造股份有限公司2024年年度报告",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.25,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec",
+            "query_id": "Q-F00201-0-1"
+          },
+          {
+            "evidence_id": "E0002",
+            "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "text",
+            "score": 0.25,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8",
+            "query_id": "Q-F00201-0-1"
+          },
+          {
+            "evidence_id": "E0003",
+            "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+            "source": "annual_report_2024.txt",
+            "page": null,
+            "evidence_type": "table",
+            "score": 0.125,
+            "table_name": null,
+            "row": null,
+            "column": null,
+            "document_id": "doc-annual_report_2024",
+            "document_version": "v1",
+            "company_id": null,
+            "period": "2024",
+            "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757",
+            "query_id": "Q-F00201-0-1"
+          }
+        ],
+        "assessments": [
+          {
+            "evidence_id": "E0001",
+            "relation": "PARTIALLY_SUPPORTS",
+            "rationale": "证据部分相关，但不足以单独支持完整 Child。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0002",
+            "relation": "PARTIALLY_SUPPORTS",
+            "rationale": "证据部分相关，但不足以单独支持完整 Child。",
+            "usable": true
+          },
+          {
+            "evidence_id": "E0003",
+            "relation": "IRRELEVANT",
+            "rationale": "与 Child 的可识别信息重合不足。",
+            "usable": false
+          }
+        ],
+        "retry_count": 0,
+        "numeric_checks": [],
+        "rule_hits": [],
+        "critic_verdict": null,
+        "risk_decision": {
+          "next_step": "finalize",
+          "risk_level": "low",
+          "reason_codes": []
+        }
+      }
+    ],
+    "summary_counts": {
+      "SUPPORTED": 2,
+      "CONTRADICTED": 1
+    }
+  }
+}

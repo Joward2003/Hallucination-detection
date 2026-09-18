@@ -1,0 +1,27 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# 构建产物与虚拟环境
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# 本地截图与临时文件(不上传)
+/*.png
+/*.jpg
+/*.jpeg
+
+# IDE
+.idea/
+.vscode/
+*.swp

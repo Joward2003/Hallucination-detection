@@ -1,0 +1,5 @@
+# The current deterministic core uses the Python standard library.
+# Install optional integrations as needed:
+#   pip install -e '.[graph,api,test]'
+# DeepSeek/OpenAI-compatible gateway:
+#   pip install -e '.[deepseek]'

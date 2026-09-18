@@ -1,0 +1,38 @@
+[
+  {
+    "evidence_id": "E0001",
+    "content": "星河制造股份有限公司2024年年度报告",
+    "source": "annual_report_2024.txt",
+    "page": null,
+    "evidence_type": "text",
+    "document_id": "doc-annual_report_2024",
+    "document_version": "v1",
+    "period": "2024",
+    "chunk_index": 1,
+    "content_hash": "8840e32b8bf0101f5b10f6c20f7c69b7a2edc1f8abfa1443f33a5c2c1982feec"
+  },
+  {
+    "evidence_id": "E0002",
+    "content": "公司2024年营业收入为120亿元，同比增长20%。海外市场拓展和新产品放量共同构成营业收入增长的主要驱动因素。",
+    "source": "annual_report_2024.txt",
+    "page": null,
+    "evidence_type": "text",
+    "document_id": "doc-annual_report_2024",
+    "document_version": "v1",
+    "period": "2024",
+    "chunk_index": 2,
+    "content_hash": "6aa98419a11ed81b0c2c049c05c6abf9c568b34838c8c3e044fcece60c002de8"
+  },
+  {
+    "evidence_id": "E0003",
+    "content": "表1：主要财务指标。2024年末资产负债率为52%，较上年末上升2个百分点。",
+    "source": "annual_report_2024.txt",
+    "page": null,
+    "evidence_type": "table",
+    "document_id": "doc-annual_report_2024",
+    "document_version": "v1",
+    "period": "2024",
+    "chunk_index": 3,
+    "content_hash": "e151561bb3bb25c35408f816c2a5a035ffb27cd09b498b95ed173f6d6a178757"
+  }
+]
