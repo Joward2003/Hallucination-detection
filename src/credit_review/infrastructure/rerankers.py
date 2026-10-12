@@ -70,6 +70,7 @@ class SentenceTransformerCrossEncoder:
             item.update({"rerank_score": round(display_score, 6), "score": round(display_score, 6), "reranker_model": self.model_name})
             ranked.append((display_score, item))
         ranked.sort(key=lambda pair: (-pair[0], -float(pair[1].get("rrf_score", 0.0)), str(pair[1].get("evidence_id", ""))))
+        self.last_scores = [{"evidence_id": item.get("evidence_id"), "rerank_score": score, "model": self.model_name} for score, item in ranked]
         return [item for _, item in ranked[:bounded]]
 
     @staticmethod

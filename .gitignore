@@ -25,3 +25,7 @@ env/
 .idea/
 .vscode/
 *.swp
+
+# Local workbench: private sources, durable jobs, working papers and credentials
+.local-data/
+.env.before-workbench

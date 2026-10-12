@@ -47,3 +47,19 @@ export const api = {
     method: 'POST', body: JSON.stringify(payload),
   }),
 };
+
+export const workbenchApi = {
+  get: (path) => request(path),
+  post: (path, payload = {}) => request(path, {method: 'POST', body: JSON.stringify(payload)}),
+  put: (path, payload) => request(path, {method: 'PUT', body: JSON.stringify(payload)}),
+  async upload(file, metadata = {}) {
+    const body = new FormData();
+    body.append('file', file);
+    for (const [key, value] of Object.entries(metadata)) body.append(key, value || '');
+    const response = await fetch(getApiBase() + '/v1/documents', {method: 'POST', body});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || '来源文件上传失败');
+    return result;
+  },
+  link: (path) => getApiBase() + path,
+};

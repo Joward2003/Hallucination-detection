@@ -1,100 +1,81 @@
-# 金融报告复核：Agentic RAG 与一键建库
+# 金融信贷分析报告智能复核工作台
 
-本项目面向金融信贷分析报告复核，目标是让系统从财报、公告和业务材料中主动检索、补齐证据，再输出带原文引用的核验意见。
+v0.2.0：在原有前端与图流程上，接入真实模型、真实中文混合检索、原件登记、持久化任务、人工恢复、报告下载与逐节点工作底稿。
 
-**当前状态：2026-09-16 已完成第一条可运行闭环和文件版一键建库服务。** 代码同时提供基于 `BAAI/bge-m3`、`bm25s` 和 `BAAI/bge-reranker-v2-m3` 的真实检索适配器；默认测试模式仍使用确定性实现，生产模式通过配置显式启用。
+## 启动
 
-## 核心逻辑
-
-```text
-离线建库
-上传材料 → 解析/OCR → 章节与表格切块 → 金融实体/期间/口径元数据
-        → Dense向量索引 + BM25词法索引 + 原文/表格存储
-        → 质量检查 → 发布可检索的知识库版本
-
-在线 Agentic RAG
-报告 → 提取主体/指标/期间与待核验结论
-     → 单一Planning Agent展开金融概念并直接生成Query Rewrite和检索参数
-     → 向量检索 Top-50 + BM25检索 Top-50
-     → RRF融合/去重，候选 Top-60 → Cross-Encoder Rerank Top-12
-     → 恢复原文、表头和脚注 → 按证据需求组织上下文
-     → 评估证据是否充分
-          ├─ 有缺口：改写/拆分查询，调用表格/章节工具补查
-          ├─ 证据充分：计算与带引用核验
-          └─ 达到预算：说明证据不足及缺失项
-     → 引用与数值校验 → 汇总复核结果
-```
-
-Top-k 为初始实验参数。每个 Claim 默认最多 3 轮检索；Agent 根据已有证据决定下一步工具、查询和结束时机，执行器约束权限与预算。金融适配重点是主体消歧、财务期间与披露日期分离、指标/单位/合并口径、表格脚注、更正稿和反向证据。
-
-报告 Parent–Child 提取是业务入口；来源文档 Document–Section–Chunk 是建库结构。报告语境不能作为外部证据自证。结果使用 `SUPPORTED / CONTRADICTED / INSUFFICIENT_EVIDENCE`，证据不足不直接等于事实错误。
-
-## 应用一键建库（当前为文件版 API）
-
-当前 `BuildManager` 已把“一键建库”的服务契约跑通：提交一次请求后依次执行解析、整理、索引、校验和发布，并返回阶段记录、失败原因和发布版本。`KnowledgeBaseRepository` 以不可变 JSON 快照保存版本，`KnowledgeBaseSearchService` 在一次检索/补查中固定版本；新版本构建失败时旧版本继续可用。
-
-页面上传、异步队列、SSE 进度和持久化双索引仍是上线工作，产品流程和迁移约束见[一键建库设计](docs/knowledge_base.md)。
-
-## 设计文档
-
-| 文档 | 内容 |
-|---|---|
-| [架构方案](docs/selected_architecture.md) | 全链路设计、金融适配、Agent决策、Top-k与验收 |
-| [系统骨架](docs/system_skeleton.md) | 目标目录、数据契约、Ports、State、工具与迁移顺序 |
-| [一键建库](docs/knowledge_base.md) | 上传、解析、双索引、增量更新、任务恢复与发布 |
-| [研究与项目参考](docs/rag_research.md) | 2025–2026近期研究、开源实现、采用/实验/排除理由 |
-| [当前实现与交接](docs/handoff.md) | 已有代码的真实能力、差距及下一步工作 |
-
-方案参考 [ACL Findings 2026 Agentic RAG 综述](https://aclanthology.org/2026.findings-acl.78/)、[FinGEAR](https://arxiv.org/abs/2509.12042)、[RAGFlow](https://github.com/infiniflow/ragflow) 和 [LangGraph Agentic RAG](https://docs.langchain.com/oss/python/langgraph/agentic-rag)。章节导航、图扩展与多重排器分别评估，论文和项目的自报成绩不当作本项目实测成绩。
-
-## 当前能运行什么
-
-| 能力 | 当前状态 |
-|---|---|
-| Parent–Child提取、三态核验、规则与人工路由 | 已有可运行演示；每个 Child 保留 Parent、检索计划和证据轨迹 |
-| MinerU Parent–Child 建库 | 已实现 JSON 适配、层级上下文、原子事实、表格定位和版本 manifest |
-| Dense + BM25 + RRF + Rerank | 已实现 provider-free 内核和真实 Sentence-Transformers/BM25S/Cross-Encoder 适配器 |
-| 表格/结构化数据路由 | 已实现 `RetrievalRouter`，按 Planning Agent 的 `retrieval_profile` 选择 Worker |
-| Planning Agent按定性概念生成指标需求和 Query Rewrite | 已实现通用概念模板、结构化 `RetrievalPlan`、缺口重写和参数校验；DeepSeek 可选实现为 LLM-first |
-| 文件版建库任务、版本发布、检索试用 API | 已实现最小闭环；支持幂等、失败可查询、取消状态和版本固定检索 |
-| 持久化建库任务、版本发布、上传与一键建库页面 | 文件版发布契约已实现；上传、队列、SSE、持久双索引和页面待产品化 |
-
-### 演示环境
-
-需要 Python 3.10+；以 `pyproject.toml` 为当前安装入口：
+本机已安装项目 `.venv`，双击 `启动复核工作台.command`，或运行：
 
 ```bash
-python -m pip install -e '.[graph,test]'
-python -m pytest -q
+cd "/Users/joward/Desktop/Hallucination/Hallucination_detection"
+./启动复核工作台.command
 ```
 
-导出演示 Evidence JSON：
+浏览器访问 `http://127.0.0.1:8000`。启动脚本只监听本机 loopback，自动读取 `.env`，不需要 `source .env`。关闭终端会停止服务；原件、任务和工作底稿保存在 `.local-data/`，重启不会丢失。
+
+新机器安装（Python 3.10+）：
 
 ```bash
-PYTHONPATH=src python scripts/build_kb.py
-
-# MinerU content_list → Parent–Child + Evidence snapshot
-PYTHONPATH=src python scripts/build_kb.py --mineru-json report.json --parent-child-output build/kb.json
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[workbench,rag,test]'
+cp .env.example .env
 ```
 
-可选 DeepSeek 演示见[示例说明](examples/README.md)。报告复核示例仍使用内存检索，不能用于验证生产召回率；知识库最小 API 需要在应用层注入 `BuildManager`（详见[一键建库设计](docs/knowledge_base.md)）。
+如使用 Codex 的隔离 Python 运行时，需要设置 `PYTHONPATH="$PWD/src"`；启动脚本已经设置。PDF 输出默认使用 macOS 的 Arial Unicode 字体，移植到其他系统时需在 `workbench/exports.py` 指定本机中文字体。
 
-需要观察完整 Agent 执行轨迹时，在示例命令后加 `--trace`。终端会逐节点打印 Parent–Child、Planning Agent 的结构化计划与检索参数、检索候选/路由分数、证据分级、核验、数值/规则检查和风险路由；这是一份可审计的决策摘要，不会输出模型私有逐字思维链。具体命令见[示例说明](examples/README.md)。
+## 完整工作流程
 
-启用真实检索后，建库和报告复核都会读取同一组配置：
+1. **知识库**：上传 PDF / DOCX / TXT / Markdown / MinerU JSON，填写主体和期间。系统保存原件、SHA256、解析器版本、页码与父子块。MinerU JSON 可以关联已登记的 PDF 原件。扫描 PDF 没有文本时会明确失败，须先通过 OCR / MinerU 处理，不会填入演示文本。
+2. **建库**：勾选来源，创建不可变版本，依次组织、建立索引、检查和发布。成功版本成为活动版本；失败或取消不覆盖旧版本。可打开底稿查看每一阶段。
+3. **RAG**：真实 `moka-ai/m3e-base` 中文向量 + BM25，RRF 合并后使用 `BAAI/bge-reranker-v2-m3` 重排序。先索引与召回子块，再回补父块原文。保留各路得分、重排得分、查询和版本。本机已存在模型缓存，启动脚本默认离线加载。模型未准备好可显式设置 `CREDIT_REVIEW_RETRIEVAL_BACKEND=lexical`，界面会标明仅 BM25；工作台不启用哈希模拟向量。
+4. **报告复核**：粘贴正文或导入原件，选择知识库版本、主体与期间；随报告上传的资料可自动建成新版本。模型拆解必须覆盖报告原文，引用锚点由程序校验。另做报告整体的信贷风险覆盖检查，其范围限于本次召回的风险证据。
+5. **验证链路**：规划证据需求 → 混合检索 → 支持 / 部分支持 / 无关 / 反向证据评分 → 必要时改写查询再检索一次 → 判断支持 / 矛盾 / 证据不足 → 程序计算 → 业务规则 → 风险路由。原报告只作语境，不能作为自己的外部证据。
+6. **报告标注**：复核工作台显示原文高亮、问题与证据三栏。高亮旁的证据链接支持鼠标悬停和键盘聚焦展示来源数据；点击打开原件，PDF 使用物理页码 `#page=`。没有物理页码的文本可打开父块定位页；不伪造页码。整体风险遗漏提醒单独展示，避免假造原报告中的文字位置。
+7. **人工介入**：证据不足、冲突、低置信度、重要信贷风险或高风险规则升级人工。可补充检索当前版本的证据，选择依据，填写理由和可选修订结论。原结论、修订文本、复核人、时间和证据都保留；提交后继续剩余复核点。任务版本锁拒绝过期或重复提交。
+8. **下载**：导出 PDF、可展开 HTML、问题 CSV、JSON，或完整底稿 ZIP。未完成任务生成明确标注状态的阶段报告。ZIP 包含原件、解析快照、固定知识库快照、节点输入输出、模型请求与结构化响应、检索分数、数值计算、规则与人工决定、文件哈希清单；其中 HTML 的来源链接可以离线打开包内原件。
+
+## 真实 API / 中转站
+
+“模型管理”页面可设置 URL、模型、Responses / Chat Completions 和流式模式，测试真实连通性。新 Key 留空保留现有配置；读接口不返回 Key，浏览器不将 Key 写入 localStorage。
+
+也可以运行 `./配置模型API.command`，隐藏输入 Key。运行任务期间不要修改 `.env`；页面配置接口会拒绝更换正在执行任务使用的配置。中转站协议兼容性和可用模型可能变化；连接测试成功只证明当次调用成功。
+
+```ini
+LLM_API_KEY=在本机填写
+LLM_BASE_URL=https://你的服务/v1
+LLM_MODEL=你的服务可用的模型标识
+LLM_WIRE_API=responses
+LLM_STREAM=true
+LLM_HTTP_HEADERS={}
+LLM_STRUCTURED_OUTPUT=false
+LLM_TIMEOUT=60
+LLM_RETRIES=2
+LLM_MAX_TOKENS=6144
+```
+
+默认保存版本化金融指标规则作为查询规划的保守后备，并记录使用原因；真实模型的结论拆解、证据评分、判定失败会使任务失败，不会退回演示判定。失败 / 重启中断的任务可以从当前复核点重新执行；已完成复核点和之前的底稿保留。
+
+## 数值校验与证据约束
+
+模型只选择操作数和逐字来源引用；金额单位换算、比率与同比计算由 Decimal 执行。校验操作数的原文、指标、期间和单位，不使用 `eval`。确定性计算冲突覆盖模型的“支持”判定；数值无法可靠绑定则降为证据不足。负数同比基数、零分母、期间不匹配和单位不明不会被强行计算为通过。
+
+复核结果不自动改写原报告，不自动作出授信决定。该版本是可在本机运行的完整链路；机构多人协作仍需接入实际身份认证、权限与责任人签批。当前复核人是本机填写的身份标识，不是银行认证身份。模型判定与风险遗漏召回需进一步使用业务团队标注的评测集验证，不能以联调样本代替业务准确率。
+
+## 工作底稿与审计
+
+- `.local-data/workbench.sqlite3`：任务、来源登记、建库版本与追加式审计底稿。SQLite 事务与触发器拒绝修改 / 删除底稿；哈希链可以检查局部完整性。
+- `.local-data/documents/`：原件及解析快照。
+- `.local-data/knowledge/`：不可变知识库快照与真实向量索引。
+- 图节点保存输入、输出、路由、错误和时间；模型记录包含可审计请求、结构化响应与用量。保存判断依据摘要，不记录模型内部思维链。
+- 本地哈希链不等同于外部签名、可信时间戳或防管理员篡改。正式审计可将根哈希送外部签名 / 存证系统。
+- 原件、解析快照和已发布知识库读取时检查登记的哈希。不允许通过 API 读取任意本机路径；浏览器跨站 Origin / 非 loopback Host 被拒绝。
+
+## 验证
 
 ```bash
-pip install -e '.[rag]'
-export CREDIT_REVIEW_RETRIEVAL_BACKEND=sentence_transformers
-export CREDIT_REVIEW_EMBEDDING_MODEL=BAAI/bge-m3
-export CREDIT_REVIEW_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+.venv/bin/python -m pytest -q
 ```
 
-## 实施顺序
+测试覆盖原有图流程与规划，以及新增持久化恢复、真实来源哈希、父块回补、失败版本不覆盖、扫描件失败、Decimal 金额 / 比率 / 同比、伪引用拒绝、人工恢复下一复核点、任务版本锁、ZIP 文件校验与同源边界。
 
-1. 在部署环境安装 `.[rag]` 并启用真实 Dense/BM25S/Cross-Encoder，记录模型、分词器和索引 profile。
-2. 把 `BuildManager._run` 下沉到持久任务仓库和队列 worker，补齐重启恢复、SSE 进度和失败重试。
-3. 接入上传/文档登记/权限中间件，页面调用同一 Build API；保留 active 版本原子切换和请求级版本固定。
-4. 用中文金融标注集验证期间、单位、表格、口径与复杂问题，校准 Evidence Requirement 和预算退出。
-
-历史设计已存入 `docs/archive/`，不再作为当前开发要求。
+旧项目的真实年报和已验证的中转站协议接入已用于本版本。原有 `run_review` / `run_review_with_deepseek` 与框架无关 API 保留供研究测试；桌面服务启动入口使用 `credit_review.workbench`，与演示后备链路分开。

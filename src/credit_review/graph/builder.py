@@ -288,7 +288,7 @@ def _trace_summary(node: str, state: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]], None] | None = None):
+def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]], None] | None = None, entry_node: str = "extract_parent_child"):
     """Build the MVP graph with all external capabilities injected."""
 
     def extract_parent_child(state: ReviewState) -> dict[str, Any]:
@@ -343,7 +343,12 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
             if trace is not None:
                 trace(base)
             started = perf_counter()
-            update = function(state) or {}
+            try:
+                update = function(state) or {}
+            except Exception as exc:
+                if trace is not None:
+                    trace({**base, "type": "node_error", "error_type": type(exc).__name__, "input": dict(state)})
+                raise
             merged = dict(state)
             merged.update(update)
             if trace is not None:
@@ -354,6 +359,8 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
                     "workflow_status": merged.get("workflow_status"),
                     "elapsed_ms": (perf_counter() - started) * 1000,
                     "summary": _trace_summary(name, merged),
+                    "input": dict(state),
+                    "output": update,
                 })
             return update
         return run
@@ -490,17 +497,17 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
         covered_needs = [
             str(request.get("need_id"))
             for request in observation_requests
-            if request.get("need_id") and str(request.get("query_id")) in hit_query_ids
+            if request.get("need_id") and any(a.get("usable") and a.get("evidence_id") == e.get("evidence_id") and str(request.get("query_id")) in (e.get("query_ids") or [e.get("query_id")]) for e in state.get("current_evidence", []) for a in assessments)
         ]
         all_missing_needs = [
             str(request.get("need_id"))
             for request in observation_requests
-            if request.get("need_id") and str(request.get("query_id")) not in hit_query_ids
+            if request.get("need_id") and str(request.get("need_id")) not in covered_needs
         ]
         missing_needs = [
             str(request.get("need_id"))
             for request in current_requests
-            if request.get("need_id") and str(request.get("query_id")) not in hit_query_ids
+            if request.get("need_id") and str(request.get("need_id")) not in covered_needs
         ]
         observation = {
             "covered_needs": covered_needs,
@@ -600,7 +607,17 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
     def numeric_check(state: ReviewState) -> dict[str, Any]:
         if services.numeric_validator is None:
             return {"numeric_checks": [], "workflow_status": "NUMERIC_CHECKED"}
-        return {"numeric_checks": services.numeric_validator.validate(state["current_fact"], state["current_evidence"]), "workflow_status": "NUMERIC_CHECKED"}
+        checks = services.numeric_validator.validate(state["current_fact"], state["current_evidence"])
+        update = {"numeric_checks": checks, "workflow_status": "NUMERIC_CHECKED"}
+        if any(c.get("passed") is False for c in checks):
+            verdict = dict(state.get("verification_result") or {})
+            verdict.update({"status": "CONTRADICTED", "confidence": "high", "reason": "程序计算与报告数字不符；详见计算工作底稿。", "issue_types": ["fact_mismatch"] + [t for t in verdict.get("issue_types", []) if t != "fact_mismatch"]})
+            update.update({"verification_result": verdict, "initial_verdict": verdict})
+        elif any(c.get("passed") is None for c in checks) and (state.get("verification_result") or {}).get("status") == "SUPPORTED":
+            verdict = dict(state["verification_result"])
+            verdict.update({"status": "INSUFFICIENT_EVIDENCE", "confidence": "low", "reason": "数值口径或操作数尚未通过程序校验；需人工确认。", "issue_types": ["insufficient_evidence"]})
+            update.update({"verification_result": verdict, "initial_verdict": verdict})
+        return update
 
     def rule_check(state: ReviewState) -> dict[str, Any]:
         if services.rule_engine is None:
@@ -756,7 +773,9 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
     graph.add_node("finalize_child", traced_node("finalize_child", finalize_child))
     graph.add_node("aggregate", traced_node("aggregate", aggregate))
 
-    graph.add_edge(START, "extract_parent_child")
+    if entry_node not in {"extract_parent_child", "prepare_child", "aggregate", "plan_query", "retrieve", "grade_evidence", "rewrite_query", "verify"}:
+        raise ValueError("invalid graph entry node")
+    graph.add_edge(START, entry_node)
     graph.add_edge("extract_parent_child", "resolve_company")
     graph.add_edge("resolve_company", "prepare_child")
     graph.add_edge("prepare_child", "plan_query")

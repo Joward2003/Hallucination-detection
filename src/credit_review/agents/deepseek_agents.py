@@ -100,7 +100,9 @@ class DeepSeekQueryPlanner:
             plan["plan_id"] = str(raw_plan.get("plan_id") or plan["plan_id"])
             plan["attempt"] = attempt
             return validate_retrieval_plan(plan)
-        except Exception:
+        except Exception as exc:
+            if hasattr(self.gateway, "record"):
+                self.gateway.record("planning_fallback", {"error_type": type(exc).__name__, "reason": str(exc), "fallback_plan": fallback_plan})
             return fallback_plan
 
     def plan(self, child: dict[str, Any], parent: dict[str, Any], company: dict[str, Any] | None, attempt: int) -> list[dict[str, Any]]:

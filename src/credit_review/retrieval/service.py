@@ -495,6 +495,7 @@ class HybridSearchService:
             {"dense": dense_hits, "bm25": bm25_hits},
             top_k=_bounded_top_k(query.get("candidate_top_k"), self.candidate_top_k),
         )
+        self.last_trace = {"query": dict(query), "scope": dict(scope), "dense_candidates": dense_hits, "bm25_candidates": bm25_hits, "fused_candidates": candidates}
         ranked = self.reranker.rank(
             query_text,
             candidates,
@@ -503,6 +504,8 @@ class HybridSearchService:
         for item in ranked:
             item["query_id"] = query.get("query_id")
             item["retrieval_profile"] = query.get("retrieval_profile", "atomic_text")
+        self.last_trace["ranked_candidates"] = ranked
+        self.last_trace["all_rerank_scores"] = getattr(self.reranker, "last_scores", ranked)
         return ranked
 
     search = retrieve

@@ -5,7 +5,8 @@ const TYPE_LABELS = {
   reasoning_gap: '推理跳跃',
   risk_omission: '风险遗漏',
   fact_mismatch: '事实不一致',
-  unclassified: '类型未标注',
+  unclassified: '待分类',
+  supported: '核验通过',
 };
 
 const STATUS_LABELS = {
@@ -16,13 +17,14 @@ const STATUS_LABELS = {
 
 function asArray(value) { return Array.isArray(value) ? value : []; }
 
+function spanKind(result,context){return context.childById.get(result.fact_id)?.review_kind;}
 function toFinding(result, context) {
   const factId = result.fact_id || result.child_id || 'unknown-fact';
   const evidence = asArray(result.evidence);
   const assessments = asArray(result.assessments);
   const risk = result.risk_decision || {};
   const issueTypes = asArray(result.issue_types);
-  const type = issueTypes[0] || 'unclassified';
+  const type = (issueTypes.includes('fact_mismatch') ? 'fact_mismatch' : issueTypes[0]) || (spanKind(result,context) === 'risk_omission' ? 'risk_omission' : result.status === 'SUPPORTED' ? 'supported' : 'unclassified');
   const assessmentById = new Map(assessments.map((item) => [item.evidence_id, item]));
   const span = context.childById.get(factId) || {};
   return {
@@ -31,13 +33,14 @@ function toFinding(result, context) {
     parentId: result.parent_id || span.parent_id || '',
     text: result.fact || span.fact || '',
     parentText: result.parent_text || '',
-    start: Number.isInteger(span.source_start) ? span.source_start : null,
-    end: Number.isInteger(span.source_end) ? span.source_end : null,
+    start: Number.isInteger(span.source_start) ? [...context.reportText].slice(0,span.source_start).join('').length : null,
+    end: Number.isInteger(span.source_end) ? [...context.reportText].slice(0,span.source_end).join('').length : null,
     status: result.status || 'INSUFFICIENT_EVIDENCE',
     statusLabel: STATUS_LABELS[result.status] || '待复核',
     reason: result.reason || result.reasoning_summary || '',
     confidence: result.confidence || '',
     issueTypes,
+    evidenceIds:asArray(result.evidence_ids),
     type,
     typeLabel: TYPE_LABELS[type] || (type === 'unclassified' ? '待分类' : type),
     risk: risk.risk_level || span.importance || '',
@@ -46,6 +49,7 @@ function toFinding(result, context) {
     evidence: evidence.map((item) => ({
       ...item,
       relation: assessmentById.get(item.evidence_id)?.relation || '',
+      quote: assessmentById.get(item.evidence_id)?.quote || '',
       rationale: assessmentById.get(item.evidence_id)?.rationale || assessmentById.get(item.evidence_id)?.reason || '',
     })),
     queries: asArray(result.queries),
@@ -93,7 +97,7 @@ export function adaptReview(record) {
       childById.set(child.fact_id, { ...child, parent_id: parent.parent_id, parent_text: parent.parent_text });
     }
   }
-  const context = { childById, pendingTask: state.human_task || null };
+  const context = { childById, pendingTask: state.human_task || null,reportText:state.original_input || '' };
   const completed = asArray(state.completed_results).length ? state.completed_results : asArray(result.completed_results);
   const findings = completed.map((item) => toFinding(item, context));
   const pending = currentPendingFinding(state, context);
@@ -102,7 +106,7 @@ export function adaptReview(record) {
     reviewId: record.review_id || result.review_id || state.review_id || '',
     reportId: record.report_id || '',
     status: record.status || state.workflow_status || result.status || 'UNKNOWN',
-    workflowStatus: state.workflow_status || result.status || 'UNKNOWN',
+    workflowStatus: record.status || state.workflow_status || result.status || 'UNKNOWN',
     reportText: state.original_input || '',
     company: (result.company_info || state.company_info || {}).company_name || '',
     findings,

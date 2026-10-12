@@ -28,6 +28,7 @@ class ParsedBlock:
     table_id: str | None = None
     bbox: tuple[float, ...] | None = None
     source_index: int = 0
+    source_segments: tuple[dict[str, Any], ...] = ()
 
 
 def _hash(value: str) -> str:
@@ -61,7 +62,10 @@ def _block_text(raw: Mapping[str, Any]) -> str:
     for key in ("table_body", "html", "table_html"):
         value = raw.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            def captions(name):
+                values = raw.get(name) or []
+                return [values] if isinstance(values, str) else [str(v) for v in values if isinstance(v, str)]
+            return '\n'.join(captions('table_caption') + [value.strip()] + captions('table_footnote'))
     return ""
 
 
@@ -94,7 +98,7 @@ def parse_mineru_export(source: Path | str | Mapping[str, Any] | list[Any]) -> l
         if not text:
             continue
         block_type = str(raw.get("type") or raw.get("block_type") or "text").lower()
-        if block_type in {"title", "heading", "header"}:
+        if block_type in {"title", "heading", "header"} or (block_type == "text" and int(raw.get("text_level") or 0) > 0):
             level = max(1, int(raw.get("text_level", raw.get("level", 1)) or 1))
             section_stack = section_stack[: level - 1] + [text]
             # Keep headings as context blocks so citations can display them.
@@ -114,11 +118,24 @@ def parse_mineru_export(source: Path | str | Mapping[str, Any] | list[Any]) -> l
                 table_id=table_id,
                 bbox=_bbox(raw.get("bbox") or raw.get("box")),
                 source_index=index,
+                source_segments=({'block_id': str(raw.get('id') or f'B{index:04d}'), 'page': _page(raw.get('page', raw.get('page_idx'))), 'bbox': list(_bbox(raw.get('bbox') or raw.get('box')) or ()), 'source_index': index, 'text': text, 'source_hash': _hash(text)},),
             )
         )
     if not blocks:
         raise ValueError("MinerU export contains no non-empty text or table blocks")
-    return blocks
+    # MinerU may split a single sentence across adjacent boxes on a page.
+    # Rejoin unfinished text in the same section across adjacent pages; headings and
+    # tables remain separate and retain their original locators.
+    merged: list[ParsedBlock] = []
+    for block in blocks:
+        previous = merged[-1] if merged else None
+        previous_end = previous.source_segments[-1]['page'] if previous and previous.source_segments else (previous.page if previous else None)
+        adjacent = previous_end is not None and block.page is not None and previous_end <= block.page <= previous_end + 1
+        if previous and previous.block_type == block.block_type == 'text' and adjacent and previous.section_path == block.section_path and len(previous.text) + len(block.text) <= 6000 and not re.search(r'[。！？!?；;：:]\s*$', previous.text):
+            merged[-1] = ParsedBlock(previous.block_id + '+' + block.block_id, 'text', previous.text + '\n' + block.text, previous.page, previous.section_path, bbox=None, source_index=previous.source_index, source_segments=previous.source_segments + block.source_segments)
+        else:
+            merged.append(block)
+    return merged
 
 
 def _parse_text(text: str) -> list[ParsedBlock]:
@@ -180,6 +197,8 @@ class KnowledgeBaseBuilder:
                 "document_version": self.document_version,
                 "source": source_name,
                 "page": block.page,
+                "page_end": block.source_segments[-1]['page'] if block.source_segments else block.page,
+                "source_segments": list(block.source_segments),
                 "section": " / ".join(block.section_path) or None,
                 "table_id": block.table_id,
                 "bbox": list(block.bbox) if block.bbox else None,
