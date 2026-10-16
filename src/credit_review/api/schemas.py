@@ -23,4 +23,7 @@ class ReviewRequest:
         missing = [field for field in required if not payload.get(field)]
         if missing:
             raise ValueError(f"missing required fields: {', '.join(missing)}")
+        companies=payload.get('companies')
+        if companies is not None and (not isinstance(companies,dict) or any(not isinstance(name,str) or not isinstance(info,dict) for name,info in companies.items())):
+            raise ValueError('companies 必须为企业名称到企业资料对象的映射。')
         return cls(**{field: payload[field] for field in required}, evidence=payload.get("evidence"), companies=payload.get("companies"), source_scope=payload.get("source_scope"))

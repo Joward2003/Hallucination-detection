@@ -6,7 +6,7 @@ import { adaptReview } from './adapter.js';
 import { readHistory, saveHistoryEntry, updateHistoryEntry, getHistoryEntry } from './store.js';
 import {
   downloadCSV, downloadJSON, esc, icon, renderDashboard, renderError, renderExport,
-  filterFindings, renderHistory, renderNewReview, renderOverview,
+  filterFindings, selectEvidence, renderHistory, renderNewReview, renderOverview,
   renderProgress, renderReviewSettings, renderSettings, renderShell, renderWorkspace,
 } from './ui.js';
 
@@ -14,8 +14,9 @@ const app = document.getElementById('app');
 const draft = {
   reportName: '', reportType: 'AI 生成报告', reportText: '', reportFileName: '',
   sourceFiles: [], companyName: '', period: '', reportId: '', kbVersion: '', reportDocumentId: '',
+  asOf: new Date().toLocaleDateString('en-CA'), temporalMode: 'historical', maxAgeDays: 365, fetchReferences: true, webSearchEnabled:true,
 };
-const workspaceState = { typeFilter: '', riskFilter: '', selectedEvidenceId: '', evidenceTab: 'source', compareMode: false, pendingOnly: false };
+const workspaceState = { sourceInfo:{}, typeFilter: '', riskFilter: '', selectedEvidenceId: '', evidenceTab: 'source', compareMode: false, pendingOnly: false };
 const recordCache = new Map();
 const reviewCache = new Map();
 const loadingReviews = new Set();
@@ -153,6 +154,15 @@ function render() {
   }
   app.innerHTML = renderShell(active, body, health);
   bindPageInputs();
+  const original=document.querySelector('[data-original-document]');
+  const documentId=original?.dataset.originalDocument;
+  if(documentId && !workspaceState.sourceInfo[documentId]) {
+    workspaceState.sourceInfo[documentId]={loading:true};
+    workbenchApi.get('/v1/documents/'+encodeURIComponent(documentId)+'/original-info').then(info=>{
+      workspaceState.sourceInfo[documentId]=info;
+      if(document.querySelector('[data-original-document]')?.dataset.originalDocument===documentId)render();
+    }).catch(()=>{workspaceState.sourceInfo[documentId]={failed:true};});
+  }
   if(reportUploadPending || sourceUploadPending){
     const next=document.querySelector('[data-action="to-settings"]');
     if(next){next.disabled=true;next.textContent='正在解析上传资料…';next.setAttribute('aria-busy','true');}
@@ -224,6 +234,16 @@ async function loadReview(reviewId) {
 }
 
 function bindPageInputs() {
+  const keywordInput=document.getElementById('web-evidence-keyword');
+  if(keywordInput)keywordInput.addEventListener('input',()=>{workspaceState.webKeyword=keywordInput.value;});
+  for (const [id,key] of [['review-as-of','asOf'],['review-time-mode','temporalMode'],['review-max-age','maxAgeDays']]) {
+    const input=document.getElementById(id);
+    if(input)input.addEventListener('change',()=>{draft[key]=input.value;});
+  }
+  const webSearch=document.getElementById('review-web-search');
+  if(webSearch)webSearch.addEventListener('change',()=>{draft.webSearchEnabled=webSearch.checked;});
+  const references=document.getElementById('review-fetch-references');
+  if(references)references.addEventListener('change',()=>{draft.fetchReferences=references.checked;});
   const kbVersion = document.getElementById('review-kb-version');
   if (kbVersion) kbVersion.addEventListener('change', () => { draft.kbVersion = kbVersion.value; });
   const reportText = document.getElementById('report-text');
@@ -298,7 +318,7 @@ async function startReview() {
       if (result.status !== 'READY') throw new Error(result.error || '建库失败');
       version=result.version;
     }
-    if (!version) throw new Error('请先选择已发布的知识库版本，或上传本次参考资料。');
+    if (!version && !(draft.fetchReferences && /https:\/\//i.test(draft.reportText))) throw new Error('请选择参考资料，或在报告中加入可读取的 HTTPS 来源链接。');
   } catch(error) {
     reportPending=false; navigate('/review/new/settings'); toast(error.message,true); return;
   }
@@ -315,7 +335,11 @@ async function startReview() {
     report_document_id: draft.reportDocumentId || undefined,
     kb_version: version,
     ...(draft.companyName ? { companies: { [draft.companyName]: {} } } : {}),
-    source_scope: {company_ids: [], periods:draft.period ? [draft.period] : [], data_classification:'local'},
+    source_scope: {company_ids: [], periods:[], data_classification:'local'},
+    fetch_references: draft.fetchReferences,
+    workflow_version:2, web_search_enabled:draft.webSearchEnabled,
+    temporal_policy: {as_of:draft.asOf || undefined, data_period:draft.period || undefined, mode:draft.temporalMode,
+      ...(draft.temporalMode==='current'?{max_age_days:Number(draft.maxAgeDays)}:{})},
   };
   try {
     const record = await api.createReview(payload);
@@ -354,7 +378,7 @@ async function submitHumanDecision(decision) {
   if (button) {button.disabled=true;button.textContent='正在保存判定…';}
   try {
     const record = await api.submitDecision(reviewId, {
-      task_version: finding.humanTask.task_version,
+      fact_id:finding.id, task_version: finding.humanTask.task_version,
       decision,
       selected_evidence_ids: selectedEvidence,
       final_text: finalText,
@@ -379,9 +403,10 @@ async function submitHumanDecision(decision) {
   } finally {decisionPending=false;}
 }
 
-function selectFinding(id) {
+function selectFinding(id, evidenceId='') {
   workspaceState.resetDetailScroll=true;
-  workspaceState.selectedEvidenceId = '';
+  workspaceState.selectedEvidenceId = evidenceId;
+  workspaceState.sourcePage=null;
   workspaceState.evidenceTab = 'source';
   const url = new URL(location.href);
   url.searchParams.set('finding', id);
@@ -402,6 +427,8 @@ function shiftFinding(direction) {
 
 document.addEventListener('click', async (event) => {
   if (await handleWorkbenchClick(event)) return;
+  const inlineEvidence=event.target.closest('[data-inline-evidence]');
+  if(inlineEvidence){event.preventDefault();workspaceState.selectedEvidenceId=inlineEvidence.dataset.inlineEvidence;workspaceState.sourceView='';navigate(inlineEvidence.getAttribute('href'));return;}
   const nav = event.target.closest('[data-nav]');
   if (nav) {
     event.preventDefault();
@@ -415,7 +442,7 @@ document.addEventListener('click', async (event) => {
   const select = event.target.closest('[data-select-finding]');
   if (select) { selectFinding(select.dataset.selectFinding); return; }
   const evidence = event.target.closest('[data-select-evidence]');
-  if (evidence) { workspaceState.selectedEvidenceId = evidence.dataset.selectEvidence; workspaceState.evidenceTab = 'source'; render(); return; }
+  if (evidence) { selectFinding(evidence.dataset.materialFinding || new URLSearchParams(location.search).get('finding'),evidence.dataset.selectEvidence); return; }
   const evidenceTab = event.target.closest('[data-evidence-tab]');
   if (evidenceTab) { workspaceState.evidenceTab = evidenceTab.dataset.evidenceTab; render(); return; }
   const humanDecision = event.target.closest('[data-human-decision]');
@@ -429,7 +456,9 @@ document.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
-  if(action==='evidence-extracted' || action==='evidence-pdf'){workspaceState.sourceView=action==='evidence-pdf'?'pdf':'extracted';render();return;}
+  if(['evidence-extracted','evidence-pdf','evidence-web'].includes(action)){workspaceState.sourceView=action.replace('evidence-','');render();return;}
+  if(action==='original-page-go'){const page=Number(document.getElementById('original-page')?.value);if(!Number.isInteger(page)||page<1)return toast('请输入有效页码。',true);workspaceState.sourcePage=page;render();return;}
+  if(action==='highlight-web'){workspaceState.webKeyword=document.getElementById('web-evidence-keyword')?.value.trim() || '';render();return;}
   if(action==='toggle-evidence-width'){workspaceState.evidenceExpanded=!workspaceState.evidenceExpanded;workspaceState.resetDetailScroll=true;render();return;}
   if(action==='submit-decision') {await submitHumanDecision(document.querySelector('[name="decision"]:checked')?.value);return;}
   if(action==='clear-filters'){workspaceState.typeFilter='';workspaceState.riskFilter='';workspaceState.pendingOnly=false;render();return;}
@@ -450,7 +479,7 @@ document.addEventListener('click', async (event) => {
     const finding=review ? selectedFindingFor(review) : null;
     const query=document.getElementById('supplement-query')?.value.trim() || '';
     if(!finding?.humanTask || !query) return toast('请在人工复核区填写补充检索关键词。',true);
-    try{await workbenchApi.post('/v1/reviews/'+reviewId+'/supplement',{task_version:finding.humanTask.task_version,query_text:query});await loadReview(reviewId);toast('补充候选已保存，请逐条确认其支持关系。');}catch(error){toast(error.message,true);}
+    try{await workbenchApi.post('/v1/reviews/'+reviewId+'/supplement',{fact_id:finding.id,task_version:finding.humanTask.task_version,query_text:query});await loadReview(reviewId);toast('补充候选已保存，请逐条确认其支持关系。');}catch(error){toast(error.message,true);}
   }
   else if (action === 'previous-finding') shiftFinding(-1);
   else if (action === 'next-finding') shiftFinding(1);
@@ -459,7 +488,7 @@ document.addEventListener('click', async (event) => {
     const reviewId = decodeURIComponent(location.pathname.split('/')[2] || '');
     const review = reviewCache.get(reviewId);
     const finding = review ? selectedFindingFor(review) : null;
-    const selected = finding?.evidence.find((item) => item.evidence_id === workspaceState.selectedEvidenceId) || finding?.evidence[0];
+    const selected = selectEvidence(finding,workspaceState.selectedEvidenceId);
     if (selected?.content) navigator.clipboard?.writeText(plainEvidenceText(selected.content)).then(() => toast('证据摘录已复制。')).catch(() => toast('浏览器未允许剪贴板访问。', true));
   } else if (action === 'save-api-base') {
     setApiBase(document.getElementById('api-base')?.value || '');
@@ -477,7 +506,7 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('change', (event) => {
-  if(event.target.id==='selected-evidence'){workspaceState.selectedEvidenceId=event.target.value;render();return;}
+  if(event.target.id==='selected-evidence'){workspaceState.selectedEvidenceId=event.target.value;workspaceState.sourcePage=null;render();return;}
   if(event.target.id==='pending-only'){workspaceState.pendingOnly=event.target.checked;render();return;}
   if(event.target.id==='history-status')filterHistory();
   if (event.target.id === 'report-file' && event.target.files?.[0]) loadReportFile(event.target.files[0]);
@@ -542,11 +571,17 @@ async function handleWorkbenchClick(event) {
     if(cancelReview){await workbenchApi.post('/v1/reviews/'+cancelReview.dataset.cancelReview+'/cancel');loadReview(cancelReview.dataset.cancelReview);return true;}
     if(continueReview){await workbenchApi.post('/v1/reviews/'+continueReview.dataset.continueReview+'/continue');loadReview(continueReview.dataset.continueReview);return true;}
     const action=button.dataset.wbAction;
+    if(action==='capture-web'){
+      const url=document.getElementById('kb-web-url').value.trim();
+      if(!url)throw new Error('请填写来源网址。');
+      const result=await workbenchApi.post('/v1/web-sources',{url,company:document.getElementById('kb-company').value.trim()});
+      await refreshWorkbench();activeEntity=result.company || '';render();toast('网页快照、时间元数据与抓取底稿已保存。勾选资料发布后可参与检索。');
+    }
     if(action==='refresh'){await refreshWorkbench();render();}
     if(action==='upload'){
       const files=[...document.getElementById('kb-files').files];
       if(!files.length)throw new Error('请先选择文件。');
-      const metadata={company:document.getElementById('kb-company').value,period:document.getElementById('kb-period').value,original_document_id:document.getElementById('kb-original').value};
+      const metadata={published_at:document.getElementById('kb-published-at').value,data_period_end:document.getElementById('kb-data-end').value,company:document.getElementById('kb-company').value,period:document.getElementById('kb-period').value,original_document_id:document.getElementById('kb-original').value};
       for(const file of files){
         document.getElementById('kb-upload-status').textContent='正在解析：'+file.name;
         const doc=await workbenchApi.upload(file,{...metadata,original_document_id:file.name.endsWith('.json')?metadata.original_document_id:''});

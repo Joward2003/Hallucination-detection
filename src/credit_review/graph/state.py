@@ -18,6 +18,8 @@ class ReviewState(TypedDict, total=False):
     child_index: int
     current_parent: dict[str, Any]
     current_fact: dict[str, Any]
+    routing_decision: dict[str, Any]
+    human_tasks: list[dict[str, Any]]
     retrieval_plan: dict[str, Any] | None
     evidence_requirements: list[dict[str, Any]]
     current_queries: list[dict[str, Any]]

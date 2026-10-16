@@ -10,9 +10,11 @@ from collections.abc import Mapping
 from decimal import Decimal
 
 UNITS = {'元': Decimal(1), '万元': Decimal(10000), '亿元': Decimal(100000000), '%': Decimal(1), '倍': Decimal(1)}
-MONEY = {'元', '万元', '亿元'}
+UNITS.update({'美元':Decimal(1),'百万美元':Decimal(1000000),'亿美元':Decimal(100000000),'十亿美元':Decimal(1000000000)})
+MONEY = {'元', '万元', '亿元','美元','百万美元','亿美元','十亿美元'}
 NUMBER = r'-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
-QUANTITY = re.compile(r'(?<![\d.,])(?P<value>' + NUMBER + r')\s*(?P<unit>亿元|万元|元|%|％|倍)')
+QUANTITY = re.compile(r'(?<![\d.,])(?P<value>' + NUMBER + r')\s*(?P<unit>十亿美元|百万美元|亿美元|美元|亿元|万元|元|%|％|倍)')
+EN_QUANTITY = re.compile(r'(?<![\d.,])(?:US\s*)?\$(?P<value>'+NUMBER+r')\s*(?P<scale>billion|million)?',re.I)
 YEARS = re.compile(r'(?<!\d)(?:19|20)\d{2}(?!\d)')
 
 
@@ -24,7 +26,9 @@ def decimal(value):
 
 
 def quantities(text):
-    return [(m, decimal(m['value']), m['unit'].replace('％', '%')) for m in QUANTITY.finditer(text)]
+    values=[(m, decimal(m['value']), m['unit'].replace('％', '%')) for m in QUANTITY.finditer(text)]
+    values += [(m,decimal(m['value']),{'billion':'十亿美元','million':'百万美元',None:'美元'}[m['scale'].lower() if m['scale'] else None]) for m in EN_QUANTITY.finditer(text)]
+    return sorted(values,key=lambda v:v[0].start())
 
 
 def number_present(value, text):
@@ -38,16 +42,48 @@ def _single_quantity(text, value, unit):
 
 
 def _claim_metric_matches(metric, fact):
+    if re.fullmatch(r'(?:本|该)?(?:季度|年度|期)?营收',metric): metric='营业收入'
     if metric in fact:
         # A generic metric cannot stand in for a differently qualified metric.
         for match in re.finditer(re.escape(metric), fact):
             prefix = fact[max(0, match.start()-20):match.start()]
-            if not re.search(r'(?:扣非|归母|母公司|其他|非|调整后(?:的)?|扣除非经常性损益后(?:的)?)\s*$', prefix):
+            if not re.search(r'(?:扣非|归母|母公司|其他|非|调整后(?:的)?|扣除非经常性损益后(?:的)?|other|adjusted|non-operating)\s*$', prefix,re.I):
                 return True
         return False
+    bilingual={'revenue':'营业收入','net income':'净利润','operating income':'营业利润'}
+    if metric.lower() in bilingual:return _claim_metric_matches(bilingual[metric.lower()],fact)
     # Generic aliases must be standalone targets, never a substring of
     # 营业外收入/其他收入/etc. Unknown synonym mappings stay unresolved.
-    return metric == '营业收入' and re.search(r'(?:^|[，。；;：:\s]|年|公司)(?:收入|营收)', fact) is not None
+    return metric == '营业收入' and re.search(r'(?:^|[，。；;：:\s]|年|季度|年度|本期|公司)(?:收入|营收)', fact) is not None
+
+
+def reconcile_numeric_verdict(child, verdict, checks):
+    """Only a completely bound, single amount statement can be confirmed here.
+
+    Other claims retain the semantic verdict even when some numbers agree.
+    Citation and time failures cannot be erased by a numerical coincidence.
+    """
+    result=dict(verdict)
+    if any(c.get('passed') is False for c in checks):
+        result.update(status='CONTRADICTED',confidence='high',reason='程序计算与报告数字不符；详见计算工作底稿。',
+                      issue_types=['fact_mismatch']+[t for t in result.get('issue_types',[]) if t!='fact_mismatch'])
+    elif any(c.get('passed') is None for c in checks) and result.get('status')=='SUPPORTED':
+        result.update(status='INSUFFICIENT_EVIDENCE',confidence='low',reason='数值口径或操作数尚未通过程序校验；需人工确认。',issue_types=['insufficient_evidence'])
+    elif checks and all(c.get('passed') is True and c.get('kind')=='amount' for c in checks):
+        simple=re.fullmatch(r'(?P<entity>[\u4e00-\u9fffA-Za-z .-]{1,30})20\d{2}(?:财年|年)(?:第[一二三四1-4]季度)?(?:营业收入|营收|营业利润|经营利润|净利润)(?:为|是|达到)'+NUMBER+r'\s*(?:十亿美元|百万美元|亿美元|美元|亿元|万元|元)[。.]?',child['fact'])
+        blocked=set(result.get('issue_types',[])) & {'citation_mismatch','overstatement','reasoning_gap','risk_omission'}
+        used=set(result.get('evidence_ids',[]))
+        operands={b['evidence_id'] for c in checks for b in c.get('operands',{}).values()}
+        times={c['evidence_id']:c for c in result.get('temporal_checks',[])}
+        time_ok=operands<=set(times) and all(times[e]['eligible'] for e in operands)
+        entity_ok=False
+        if simple and time_ok:
+            from .temporal import ENTITY_ALIASES
+            target=simple['entity'].strip().lower()
+            entity_ok=all(target in {str(times[e].get('source_company') or '').lower(),*(a.lower() for a in ENTITY_ALIASES.get(times[e].get('source_company'),()))} for e in operands)
+        if simple and entity_ok and not blocked and not result.get('citation_checks') and operands and operands<=used and time_ok:
+            result.update(status='SUPPORTED',confidence='high',reason='逐字操作数、主体、期间和币种已匹配，金额由 Decimal 换算核验一致。',issue_types=[],numeric_reconciled=True)
+    return result
 
 
 def _operand(binding, known):
@@ -70,7 +106,8 @@ def _operand(binding, known):
         raise ValueError('引用包含其他期间，不能唯一绑定操作数年份')
     if not years:
         source_years = set(YEARS.findall(source['content']))
-        if str(source.get('period') or '') != period or source_years - {period}:
+        declared=str(source.get('period') or (source.get('temporal') or {}).get('data_period') or '')
+        if declared not in {period,'FY'+period} and not declared.startswith('FY'+period+'Q') or source_years - {period}:
             raise ValueError('操作数期间缺少明确支持')
     if unit not in UNITS:
         raise ValueError('操作数单位无效')
@@ -78,7 +115,7 @@ def _operand(binding, known):
     match = quantities(quote)[0][0]
     prefix = re.split(r'[，,；;。！？!?\n]', quote[:match.start()])[-1]
     metric_end = prefix.rfind(metric) + len(metric)
-    if metric not in prefix or not re.fullmatch(r'\s*(?:(?:为|约为|达到|达|合计|总计|是|约|计|人民币|金额|金额为)\s*|[:：]\s*)*', prefix[metric_end:]):
+    if metric not in prefix or not re.fullmatch(r'\s*(?:(?:为|约为|达到|达|合计|总计|是|约|计|人民币|金额|金额为|was|were|is|of|reached)\s*|[:：]\s*)*', prefix[metric_end:],re.I):
         raise ValueError('指标与数值不属于同一明确数量短语')
     # A short quote containing one metric/year/quantity is necessary. It is
     # intentionally insufficient for unstructured multi-year/multi-value tables.
@@ -108,6 +145,7 @@ def compute_check(spec, fact, evidence):
             current = bindings['current']
             if unit not in MONEY or current['unit'] not in MONEY:
                 raise ValueError('金额校验须使用金额单位')
+            if ('美元' in unit)!=('美元' in current['unit']):raise ValueError('金额币种不一致，不执行汇率换算')
             if target_years and target_years != {str(current['period'])}:
                 raise ValueError('操作数期间与报告目标不一致')
             if not _claim_metric_matches(current['metric'], quote):
@@ -122,6 +160,7 @@ def compute_check(spec, fact, evidence):
                 raise ValueError('比率期间与报告目标不一致')
             if numerator['unit'] not in MONEY or denominator['unit'] not in MONEY:
                 raise ValueError('比率操作数量纲不一致')
+            if ('美元' in numerator['unit'])!=('美元' in denominator['unit']):raise ValueError('比率币种不一致')
             formulas = {
                 '资产负债率': ({'总负债', '负债总额'}, {'总资产', '资产总额'}),
                 '流动比率': ({'流动资产', '流动资产合计'}, {'流动负债', '流动负债合计'}),
@@ -138,6 +177,7 @@ def compute_check(spec, fact, evidence):
             current, previous = bindings['current'], bindings['previous']
             if unit != '%' or current['metric'] != previous['metric'] or current['unit'] not in MONEY or previous['unit'] not in MONEY:
                 raise ValueError('同比单位、指标或量纲不一致')
+            if ('美元' in current['unit'])!=('美元' in previous['unit']):raise ValueError('同比币种不一致')
             if not _claim_metric_matches(current['metric'], fact):
                 raise ValueError('同比指标未匹配报告目标')
             if int(current['period']) - int(previous['period']) != 1:
@@ -169,7 +209,36 @@ class NumericValidator:
         specs = self.verifier.bindings.get(child['fact_id'], [])
         if not isinstance(specs, list):
             specs = [None]
-        checks = [compute_check(spec, child['fact'], evidence) for spec in specs]
+        prepared=[]
+        report_quantities=quantities(child['fact'])
+        for spec in specs:
+            try:
+                if isinstance(spec,Mapping) and spec.get('kind')=='amount' and len(report_quantities)==1:
+                    _,expected,unit=report_quantities[0]
+                    if unit in MONEY:
+                        spec={**spec,'model_report_binding':{k:spec.get(k) for k in ('expected','unit','report_quote')},'expected':str(expected),'unit':unit,'report_quote':child['fact']}
+                        operands=dict(spec.get('operands') or {})
+                        current=operands.get('current')
+                        if isinstance(current,Mapping):
+                            quote=current.get('quote','');metric=current.get('metric','')
+                            if isinstance(quote,str) and isinstance(metric,str) and metric and not re.search(r'<(?:table|td|tr|th)\b',quote,re.I) and len(set(YEARS.findall(quote)))<=1:
+                                matches=[m for m,value,q_unit in quantities(quote) if str(value)==str(decimal(current.get('value',0))) and q_unit==current.get('unit')]
+                                if len(matches)==1:
+                                    end=matches[0].end();begin=quote.rfind(metric,0,matches[0].start())
+                                    if begin>=0:operands['current']={**current,'quote':quote[begin:end]}
+                        spec={**spec,'operands':operands}
+            except (ValueError,TypeError,ArithmeticError,AttributeError):
+                pass
+            prepared.append(spec)
+        checks = [compute_check(spec, child['fact'], evidence) for spec in prepared]
+        if getattr(self.verifier,'temporal_policy',None):
+            from .temporal import temporal_check
+            by_id={e['evidence_id']:e for e in evidence}
+            for check in checks:
+                if not isinstance(check.get('operands'),Mapping):continue
+                if any(not temporal_check(child['fact'],by_id[b['evidence_id']],self.verifier.temporal_policy)['eligible']
+                       for b in check['operands'].values() if isinstance(b,Mapping) and b.get('evidence_id') in by_id):
+                    check.update(passed=None,observed=None,failure_reason='操作数时间匹配未通过，不能作为事实冲突依据。')
         # One valid check cannot mask a second unbound numerical statement.
         spans = []
         for check in checks:

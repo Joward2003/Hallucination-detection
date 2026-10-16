@@ -80,6 +80,9 @@ class MvpServices:
     rule_engine: Any | None = None
     risk_policy: Any | None = None
     critic_verifier: Any | None = None
+    retrieval_router: Any | None = None
+    labeler: Any | None = None
+    defer_human_review: bool = False
 
 
 def _coerce_evidence(items: list[Evidence | dict[str, Any]] | None) -> list[Evidence]:
@@ -395,12 +398,19 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
             return destination
         return route
 
+    def route_retrieval(state: ReviewState) -> dict[str, Any]:
+        routing=services.retrieval_router.route(state['current_fact'],state['current_parent'],state.get('company_info'),state.get('current_evidence',[]))
+        return {'routing_decision':routing,'workflow_status':'SOURCE_ROUTED'}
+
+    def planner_context(state):
+        return {'context':{'routing_decision':state.get('routing_decision',{}),'evidence':state.get('current_evidence',[]),'assessments':state.get('current_assessments',[]),'observation':state.get('evidence_observation')}} if getattr(services.query_planner,'accepts_context',False) else {}
+
     def plan_query(state: ReviewState) -> dict[str, Any]:
         planner = services.query_planner
         if hasattr(planner, "build_plan"):
             plan = planner.build_plan(
                 state["current_fact"], state["current_parent"],
-                state.get("company_info"), attempt=state["retry_count"],
+                state.get("company_info"), attempt=state["retry_count"], **planner_context(state),
             )
             queries = plan["requests"]
         else:
@@ -552,7 +562,7 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
             plan = planner.build_plan(
                 state["current_fact"], state["current_parent"],
                 state.get("company_info"), attempt=retry_count,
-                missing_needs=state.get("missing_needs") or missing_need_ids(state),
+                missing_needs=state.get("missing_needs") or missing_need_ids(state), **planner_context(state),
             )
             queries = plan["requests"]
         else:
@@ -615,7 +625,11 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
             return {"numeric_checks": [], "workflow_status": "NUMERIC_CHECKED"}
         checks = services.numeric_validator.validate(state["current_fact"], state["current_evidence"])
         update = {"numeric_checks": checks, "workflow_status": "NUMERIC_CHECKED"}
-        if any(c.get("passed") is False for c in checks):
+        from credit_review.workbench.numeric import reconcile_numeric_verdict
+        reconciled = reconcile_numeric_verdict(state['current_fact'], state.get('verification_result') or {}, checks)
+        if reconciled.get('numeric_reconciled'):
+            update.update(verification_result=reconciled, initial_verdict=reconciled)
+        elif any(c.get("passed") is False for c in checks):
             verdict = dict(state.get("verification_result") or {})
             verdict.update({"status": "CONTRADICTED", "confidence": "high", "reason": "程序计算与报告数字不符；详见计算工作底稿。", "issue_types": ["fact_mismatch"] + [t for t in verdict.get("issue_types", []) if t != "fact_mismatch"]})
             update.update({"verification_result": verdict, "initial_verdict": verdict})
@@ -635,6 +649,15 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
             "risk_level": state["current_fact"].get("importance", "low"),
         }
         return {"rule_hits": services.rule_engine.evaluate(context), "workflow_status": "RULES_CHECKED"}
+
+    def classify_issues(state: ReviewState) -> dict[str, Any]:
+        result=services.labeler.classify(state['current_fact'],state['current_parent'],state.get('verification_result') or {},state.get('current_evidence',[]),state.get('current_assessments',[]),state.get('numeric_checks',[]),state.get('rule_hits',[]))
+        return {'verification_result':result,'initial_verdict':result,'workflow_status':'ISSUES_ADJUDICATED'}
+
+    def route_after_judgment(state: ReviewState) -> str:
+        verdict=state.get('verification_result') or {}
+        if verdict.get('status')=='INSUFFICIENT_EVIDENCE' and state.get('retry_count',0)<services.max_retry and state['current_fact'].get('review_kind')!='extraction_gap':return 'rewrite_query'
+        return 'risk_gate'
 
     def risk_gate(state: ReviewState) -> dict[str, Any]:
         initial = state.get("initial_verdict") or state.get("verification_result") or {}
@@ -693,6 +716,8 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
                 "confidence": "high",
                 "human_decision": dict(decision),
             })
+        if services.defer_human_review and (state.get("human_task") or {}).get("status")=="PENDING":
+            result.update(human_task=dict(state["human_task"]),pending_review=True)
         result.update({
             "fact_id": child["fact_id"],
             "fact": child["fact"],
@@ -750,10 +775,13 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
         for item in results:
             status = item["status"]
             counts[status] = counts.get(status, 0) + 1
+        pending=[item["human_task"] for item in results if item.get("pending_review") and (item.get("human_task") or {}).get("status")=="PENDING"]
+        status="HUMAN_REVIEW_REQUIRED" if pending else "COMPLETED"
         return {
-            "workflow_status": "COMPLETED",
+            "workflow_status": status,
+            "human_tasks":pending,
             "review_result": {
-                "status": "COMPLETED",
+                "status": status,
                 "company_info": state.get("company_info"),
                 "fact_groups": state["fact_groups"],
                 "completed_results": results,
@@ -765,6 +793,8 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
     graph.add_node("extract_parent_child", traced_node("extract_parent_child", extract_parent_child))
     graph.add_node("resolve_company", traced_node("resolve_company", resolve_company))
     graph.add_node("prepare_child", traced_node("prepare_child", prepare_child))
+    if services.retrieval_router is not None:graph.add_node("route_retrieval",traced_node("route_retrieval",route_retrieval))
+    if services.labeler is not None:graph.add_node("classify_issues",traced_node("classify_issues",classify_issues))
     graph.add_node("plan_query", traced_node("plan_query", plan_query))
     graph.add_node("retrieve", traced_node("retrieve", retrieve))
     graph.add_node("grade_evidence", traced_node("grade_evidence", grade_evidence))
@@ -779,26 +809,29 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
     graph.add_node("finalize_child", traced_node("finalize_child", finalize_child))
     graph.add_node("aggregate", traced_node("aggregate", aggregate))
 
-    if entry_node not in {"extract_parent_child", "prepare_child", "aggregate", "plan_query", "retrieve", "grade_evidence", "rewrite_query", "verify"}:
+    if entry_node not in {"extract_parent_child", "resolve_company", "prepare_child", "aggregate", "route_retrieval", "plan_query", "retrieve", "grade_evidence", "rewrite_query", "verify", "numeric_check", "rule_check", "classify_issues", "risk_gate"}:
         raise ValueError("invalid graph entry node")
     graph.add_edge(START, entry_node)
     graph.add_edge("extract_parent_child", "resolve_company")
     graph.add_edge("resolve_company", "prepare_child")
     def route_after_prepare(state: ReviewState) -> Literal['verify', 'plan_query']:
-        return 'verify' if state['current_fact'].get('review_kind') == 'extraction_gap' else 'plan_query'
+        return 'verify' if state['current_fact'].get('review_kind') == 'extraction_gap' else 'route_retrieval' if services.retrieval_router is not None else 'plan_query'
 
     graph.add_conditional_edges("prepare_child", traced_router("prepare_child", route_after_prepare))
+    if services.retrieval_router is not None:graph.add_edge("route_retrieval","plan_query")
     graph.add_edge("plan_query", "retrieve")
     graph.add_edge("retrieve", "grade_evidence")
     graph.add_conditional_edges("grade_evidence", traced_router("grade_evidence", route_after_grade))
     graph.add_edge("rewrite_query", "retrieve")
     graph.add_edge("verify", "numeric_check")
     graph.add_edge("numeric_check", "rule_check")
-    graph.add_edge("rule_check", "risk_gate")
+    if services.labeler is not None:
+        graph.add_edge("rule_check","classify_issues");graph.add_conditional_edges("classify_issues",traced_router("classify_issues",route_after_judgment))
+    else:graph.add_edge("rule_check", "risk_gate")
     graph.add_conditional_edges("risk_gate", traced_router("risk_gate", route_after_risk))
     graph.add_edge("critic", "compare")
     graph.add_conditional_edges("compare", traced_router("compare", route_after_compare))
-    graph.add_edge("human_review", END)
+    graph.add_edge("human_review", "finalize_child" if services.defer_human_review else END)
     graph.add_conditional_edges("finalize_child", traced_router("finalize_child", route_after_child))
     graph.add_edge("aggregate", END)
     return graph.compile()

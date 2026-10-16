@@ -120,15 +120,51 @@ def create_workbench_app(root=None, backend=None, gateway_factory=None):
     @app.get('/v1/documents')
     def documents(): return store.list('document')
     @app.post('/v1/documents')
-    async def upload(file: UploadFile = File(...), company: str = Form(''), period: str = Form(''), original_document_id: str = Form('')):
+    async def upload(file: UploadFile = File(...), company: str = Form(''), period: str = Form(''), original_document_id: str = Form(''), published_at: str = Form(''), data_period_end: str = Form('')):
         from starlette.concurrency import run_in_threadpool
         data = await file.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES: raise ValueError('文件超过 50 MB 上限。')
-        return await run_in_threadpool(knowledge.register, file.filename or 'source.txt', data, company, period, original_document_id or None)
+        from datetime import date
+        temporal={}
+        for key,value in [('published_at',published_at),('data_period_end',data_period_end)]:
+            if value:
+                date.fromisoformat(value)
+                temporal[key]=value
+        if temporal:temporal['date_evidence']={k:{'method':'user_asserted_upload_metadata','quote':v} for k,v in temporal.items()}
+        return await run_in_threadpool(knowledge.register, file.filename or 'source.txt', data, company, period, original_document_id or None, web_metadata=temporal)
+    @app.post('/v1/web-sources')
+    def web_source(payload: dict[str,Any]):
+        ident='WEB-'+hashlib.sha256(os.urandom(32)).hexdigest()[:12]
+        store.append(ident,'web_import_requested',{'url':payload.get('url'),'company':payload.get('company','')})
+        try:
+            doc=knowledge.capture_url(payload['url'],company=payload.get('company',''),job=ident)
+            return {**doc,'audit_job':ident}
+        except Exception as exc:
+            store.append(ident,'web_import_failed',{'error':str(exc),'error_type':type(exc).__name__})
+            raise ValueError(str(exc)) from exc
     @app.get('/v1/documents/{ident}/original')
     def original(ident: str):
         path, doc = knowledge.source_path(ident)
         return FileResponse(path, filename=doc['name'], media_type='application/pdf' if doc['suffix'] == '.pdf' else 'application/octet-stream', content_disposition_type='inline' if doc['suffix'] == '.pdf' else 'attachment')
+    @app.get('/v1/documents/{ident}/original-info')
+    def original_info(ident: str):
+        path,doc=knowledge.source_path(ident)
+        original_id=doc.get('original_document_id') or ident
+        if original_id!=ident:path,doc=knowledge.source_path(original_id)
+        result={'document_id':original_id,'source_type':doc.get('source_type'),'sha256':doc['sha256'],'page_count':None}
+        if doc['suffix']=='.pdf':
+            import pymupdf
+            with pymupdf.open(path) as pdf:result['page_count']=len(pdf)
+        return result
+    @app.get('/v1/documents/{ident}/original-view',response_class=HTMLResponse)
+    def original_web_view(ident: str, highlight: str=Query('',max_length=2000),keyword: str=Query('',max_length=200),parent: str=Query('',max_length=100)):
+        from .original_web import original_html,CSP
+        return HTMLResponse(original_html(knowledge,ident,highlight,keyword,parent),headers={'Content-Security-Policy':CSP,'Referrer-Policy':'no-referrer'})
+    @app.get('/v1/documents/{ident}/web-assets/{name}')
+    def web_asset(ident: str,name: str):
+        from .original_web import asset_path
+        path,mime=asset_path(knowledge,ident,name)
+        return FileResponse(path,media_type=mime,headers={'Access-Control-Allow-Origin':'*'})
     @app.get('/v1/documents/{ident}/pages/{page}.png')
     def source_page_preview(ident: str, page: int, highlight: str = Query('', max_length=2000)):
         from .pdf_preview import render_page
@@ -144,9 +180,13 @@ def create_workbench_app(root=None, backend=None, gateway_factory=None):
         return Response(image, media_type='image/png', headers={'X-Evidence-Highlights': str(matches), 'X-Source-Page': str(page)})
 
     @app.get('/v1/documents/{ident}/view', response_class=HTMLResponse)
-    def source_view(ident: str):
+    def source_view(ident: str, highlight: str = Query('',max_length=2000), keyword: str = Query('',max_length=200), focus: str = Query('',max_length=100)):
         doc = store.get('document', ident)
         snapshot = knowledge.parsed(ident)
+        if doc.get('source_type')=='web':
+            from .source_views import snapshot_html
+            return HTMLResponse(snapshot_html(doc,snapshot,highlight,keyword,focus),headers={
+                'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"})
         blocks = ''.join('<section id="' + esc(p['parent_id']) + '"><h2>' + esc(p['parent_id']) + (' · 第 ' + str(p['source_locator']['page']) + ' 页' if p['source_locator'].get('page') else '') + '</h2><pre>' + esc(p['parent_text']) + '</pre><small>SHA256 ' + esc(p['source_hash']) + '</small></section>' for p in snapshot['parents'])
         return '<!doctype html><meta charset="utf-8"><title>' + esc(doc['name']) + '</title><style>body{font:15px/1.8 system-ui;max-width:1000px;margin:40px auto;padding:20px;color:#253e54}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{border-top:1px solid #ccc;padding:24px 0}section:target{background:#fff5cd}small{overflow-wrap:anywhere}h2{font-size:18px}</style><h1>' + esc(doc['name']) + '</h1><p><a href="/v1/documents/' + esc(ident) + '/original">下载原始文件</a> · 原件 SHA256 ' + esc(doc['sha256']) + '</p>' + blocks
     @app.get('/v1/knowledge-bases')

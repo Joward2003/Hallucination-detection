@@ -44,7 +44,7 @@ class RuleEngine:
 
 def default_rules() -> list[Rule]:
     return [
-        Rule("numeric-check-failed", "1", "reasoning_gap", "high", lambda c: any(item.get("passed") is False for item in c.get("numeric_checks", [])), "确定性数值校验未通过。"),
-        Rule("counter-evidence", "1", "risk_omission", "high", lambda c: any(item.get("relation") == "CONTRADICTS" for item in c.get("assessments", [])), "存在与报告结论方向相反的外部证据。"),
-        Rule("critical-child-human", "1", "risk_omission", "critical", lambda c: c.get("risk_level") == "critical", "关键风险 Child 必须人工复核。", True),
+        Rule("numeric-check-failed", "2", "fact_mismatch", "high", lambda c: any(item.get("passed") is False for item in c.get("numeric_checks", [])), "确定性数值校验未通过。"),
+        Rule("counter-evidence", "2", "evidence_conflict", "high", lambda c: any(item.get("relation") == "CONTRADICTS" for item in c.get("assessments", [])), "存在与报告结论方向相反的外部证据。"),
+        Rule("critical-child-human", "2", "manual_review", "critical", lambda c: c.get("risk_level") == "critical", "关键风险 Child 必须人工复核。", True),
     ]

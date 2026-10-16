@@ -39,7 +39,18 @@ class Gateway:
         try:
             text = self.client.complete(system, user)
             self.record('model_response', {'text': text, 'usage': {k: self.client.usage[k] - before[k] for k in before}})
-            return parse_json(text)
+            try:
+                return parse_json(text)
+            except Exception as parse_error:
+                # A single syntax retry, never a fallback verdict or JSON repair
+                # that could silently change financial values or source quotes.
+                self.record('model_json_retry', {'error':str(parse_error),'attempt_limit':1})
+                retry_system=system+' 上次输出不是有效JSON。重新完成同一任务，只输出JSON对象；字符串内的双引号必须用反斜杠转义，无关证据的quote可留空。'
+                self.record('model_request', {**request,'messages':[{'role':'system','content':retry_system},{'role':'user','content':user}],'syntax_retry':True})
+                before_retry=dict(self.client.usage)
+                retry_text=self.client.complete(retry_system,user)
+                self.record('model_response', {'text':retry_text,'syntax_retry':True,'usage':{k:self.client.usage[k]-before_retry[k] for k in before_retry}})
+                return parse_json(retry_text)
         except Exception as exc:
             self.record('model_error', {'error': str(exc), 'type': type(exc).__name__})
             raise

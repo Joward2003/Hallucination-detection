@@ -30,3 +30,42 @@ test('missing evidence requirement IDs become business descriptions',()=>{const 
 test('partial exports count the displayed verdicts instead of absent final summaries',()=>{const html=renderExport(review);assert.match(html,/证据支持 <b>1<\/b>/);assert.match(html,/证据不足 <b>1<\/b>/);});
 
 test('cancelled tasks never expose an actionable human decision',()=>{const r=structuredClone(raw);r.status='CANCELLED';const normalized=adaptReview(r);assert.equal(normalized.pendingTask,null);assert.doesNotMatch(renderWorkspace(normalized,'f1',state),/id="human-comment"/);});
+
+test('web evidence opens a saved snapshot in the same pane with escaped highlight query',()=>{
+  const r=structuredClone(raw);r.temporal_policy={as_of:'2026-10-16'};
+  r.state.current_evidence=[{evidence_id:'e1',source:'公开披露',source_type:'web',snapshot_url:'/v1/documents/d1/view#P0001',content:'Revenue was $76.4 billion.',temporal:{published_at:'2025-07-30',data_period:'FY2025Q4'}}];
+  r.state.current_assessments=[{evidence_id:'e1',quote:'Revenue was $76.4 billion.',relation:'SUPPORTS'}];
+  r.state.verification_result.temporal_checks=[{evidence_id:'e1',eligible:false,reasons:['数据期间不匹配'],source_temporal:{data_period:'FY2024Q4'}}];
+  r.state.verification_result.evidence_ids=['e1'];
+  const html=renderWorkspace(adaptReview(r),'f1',{...state,webKeyword:'<script>'});
+  assert.match(html,/<iframe class="web-snapshot-frame original-web-frame"/);
+  assert.match(html,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
+  assert.doesNotMatch(html,/allow-same-origin|<script>/);
+  assert.match(html,/keyword=%3Cscript%3E/);
+  assert.match(html,/original-view/);
+  assert.match(html,/FY2025Q4/);
+  assert.match(html,/2025-07-30/);
+  assert.match(html,/parent=P0001/);
+});
+
+test('evidence pane defaults to an actually used supporting source',()=>{
+  const r=structuredClone(raw);
+  r.state.current_evidence=[{evidence_id:'irrelevant',content:'排名高但无关的候选',source:'候选'},{evidence_id:'used',content:'被实际采用的原文',source:'采用来源'}];
+  r.state.current_assessments=[{evidence_id:'irrelevant',relation:'IRRELEVANT'},{evidence_id:'used',relation:'SUPPORTS'}];
+  r.state.verification_result.evidence_ids=['used'];
+  const html=renderWorkspace(adaptReview(r),'f1',state);
+  assert.match(html,/queue-material selected[^>]*data-select-evidence="used"/);
+  assert.match(html,/被实际采用的原文/);
+  assert.doesNotMatch(html,/排名高但无关的候选/);
+});
+
+
+test('batch queue exposes every pending item and advances to the next unresolved point',()=>{
+ const task=id=>({fact_id:id,status:'PENDING',task_version:1});
+ const r={review_id:'batch',workflow_version:2,status:'HUMAN_REVIEW_REQUIRED',state:{completed_results:[{fact_id:'a',fact:'结论甲',status:'INSUFFICIENT_EVIDENCE',pending_review:true,human_task:task('a'),evidence:[]},{fact_id:'b',fact:'结论乙',status:'SUPPORTED',labeling_status:'failed',pending_review:true,human_task:task('b'),evidence:[]}]}};
+ let adapted=adaptReview(r);assert.equal(adapted.pendingTask.fact_id,'a');assert.equal(filterFindings(adapted,{pendingOnly:true}).length,2);
+ r.state.completed_results[0].pending_review=false;r.state.completed_results[0].human_task.status='RESOLVED';
+ adapted=adaptReview(r);assert.equal(adapted.pendingTask.fact_id,'b');
+ const html=renderWorkspace(adapted,'b',state);assert.match(html,/标签待确认/);assert.doesNotMatch(html,/未发现问题/);
+ r.status='RUNNING';assert.equal(adaptReview(r).findings[1].humanTask,null);
+});

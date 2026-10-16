@@ -6,6 +6,7 @@ const TYPE_LABELS = {
   risk_omission: '风险遗漏',
   fact_mismatch: '事实不一致',
   unclassified: '待分类',
+  unreviewed:'待处理',
   supported: '核验通过',
 };
 
@@ -26,7 +27,7 @@ function toFinding(result, context) {
   const requirements = [...asArray(result.evidence_requirements),...asArray(result.retrieval_plan?.requests)];
   const needById = new Map(requirements.map(need=>[need.need_id,need.description || need.query_text]));
   const issueTypes = asArray(result.issue_types);
-  const type = (issueTypes.includes('fact_mismatch') ? 'fact_mismatch' : issueTypes[0]) || (spanKind(result,context) === 'risk_omission' ? 'risk_omission' : result.status === 'SUPPORTED' ? 'supported' : 'unclassified');
+  const type = result.primary_issue || (issueTypes.includes('fact_mismatch') ? 'fact_mismatch' : issueTypes[0]) || (spanKind(result,context) === 'risk_omission' ? 'risk_omission' : result.status === 'SUPPORTED' ? 'supported' : 'unclassified');
   const assessmentById = new Map(assessments.map((item) => [item.evidence_id, item]));
   const span = context.childById.get(factId) || {};
   return {
@@ -51,7 +52,7 @@ function toFinding(result, context) {
     evidence: evidence.map((item) => ({
       ...item,
       relation: assessmentById.get(item.evidence_id)?.relation || '',
-      quote: assessmentById.get(item.evidence_id)?.quote || '',
+      quote: assessmentById.get(item.evidence_id)?.quote || asArray(result.citation_quotes).find(q=>q.evidence_id===item.evidence_id)?.quote || '',
       rationale: assessmentById.get(item.evidence_id)?.rationale || assessmentById.get(item.evidence_id)?.reason || '',
     })),
     queries: asArray(result.queries),
@@ -59,9 +60,13 @@ function toFinding(result, context) {
     missingNeedIds: asArray(result.missing_needs),
     missingNeeds: asArray(result.missing_needs).map(id=>needById.get(id) || (/^[A-Z]-[A-Za-z0-9_-]+$/.test(id)?'尚缺少一项核验所需资料，详细需求见流程底稿。':id)),
     numericChecks: asArray(result.numeric_checks),
+    temporalChecks: asArray(result.temporal_checks),
+    citationChecks: asArray(result.citation_checks),
     ruleHits: asArray(result.rule_hits),
     humanDecision: result.human_decision || null,
-    humanTask: context.pendingTask?.fact_id === factId ? context.pendingTask : null,
+    humanTask: context.allowHuman ? result.human_task || (context.pendingTask?.fact_id === factId ? context.pendingTask : null) : null,
+    labelingStatus:result.labeling_status || '',
+    unreviewed:result.status==='NOT_REVIEWED',
     finalText: result.human_decision?.final_text || null,
   };
 }
@@ -102,11 +107,12 @@ export function adaptReview(record) {
       childById.set(child.fact_id, { ...child, parent_id: parent.parent_id, parent_text: parent.parent_text });
     }
   }
-  const context = { childById, pendingTask: ['CANCELLED','FAILED','INTERRUPTED','COMPLETED'].includes(record.status) ? null : state.human_task || null,reportText:state.original_input || '' };
+  const context = { childById,allowHuman:record.status==='HUMAN_REVIEW_REQUIRED', pendingTask: ['CANCELLED','FAILED','INTERRUPTED','COMPLETED'].includes(record.status) ? null : state.human_task || null,reportText:state.original_input || '' };
   const completed = asArray(state.completed_results).length ? state.completed_results : asArray(result.completed_results);
   const findings = completed.map((item) => toFinding(item, context));
   const pending = currentPendingFinding(state, context);
   if (pending && !findings.some((item) => item.id === pending.id)) findings.push(pending);
+  for(const [fact_id,child] of childById)if(!findings.some(f=>f.id===fact_id))findings.push({...toFinding({fact_id,fact:child.fact,status:'NOT_REVIEWED',reason:''},context),type:'unreviewed',typeLabel:'待处理',statusLabel:'尚未核验'});
   return {
     reviewId: record.review_id || result.review_id || state.review_id || '',
     reportId: record.report_id || '',
@@ -116,7 +122,7 @@ export function adaptReview(record) {
     company: (result.company_info || state.company_info || {}).company_name || '',
     findings,
     groups,
-    pendingTask: context.pendingTask,
+    pendingTask: context.pendingTask || (context.allowHuman ? completed.find(item=>item.pending_review && item.human_task?.status==='PENDING')?.human_task : null) || null,
     summaryCounts: result.summary_counts || {},
     corpusVersion: result.corpus_version || state.corpus_version || '',
     ruleSetVersion: result.rule_set_version || state.rule_set_version || '',

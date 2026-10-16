@@ -1,4 +1,4 @@
-import {renderEvidenceContent, evidencePdfPath, evidencePreviewPath} from './evidence-renderer.js';
+import {renderEvidenceContent, evidencePdfPath, evidencePreviewPath, plainEvidenceText} from './evidence-renderer.js';
 import {workbenchApi} from './api.js';
 import {exportLink} from './workbench.js';
 import { typeLabel } from './adapter.js';
@@ -23,7 +23,6 @@ const ICONS = {
   check: '<path d="m5 12 4 4L19 6"/>',
   upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
   alert: '<path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9v4m0 4h.01"/>',
-  shield: '<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11"/><path d="m9 12 2 2 4-4"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
   align: '<path d="M3 6h18M3 12h12M3 18h18"/>',
@@ -55,7 +54,7 @@ export function renderShell(activePath, content, apiStatus) {
   const api = apiStatus === true ? '<span class="service-dot online"></span><span>复核服务正常</span>' : apiStatus === false ? '<span class="service-dot offline"></span><span>复核服务离线</span>' : '<span class="service-dot pending"></span><span>检查连接中</span>';
   if(apiStatus===false && !['/dashboard','/settings'].includes(activePath))content='<div class="error-inline" role="status">服务暂时不可用。请检查系统设置中的服务地址，再刷新连接。</div>'+content;
   return '<a class="skip-link" href="#main-content">跳转到主内容</a><div class="app-shell">' +
-    '<aside class="sidebar"><a class="brand" href="/dashboard" data-nav><span class="brand-mark">' + icon('shield', 21) + '</span><span class="brand-copy"><strong>金融报告复核</strong><small>AI Review Workspace</small></span></a>' +
+    '<aside class="sidebar"><a class="brand" href="/dashboard" data-nav><span class="brand-mark" aria-hidden="true"><img src="/assets/brand/review-robot.png" width="44" height="44" alt="" decoding="async" /></span><span class="brand-copy"><strong>金融报告复核</strong><small>AI Review Workspace</small></span></a>' +
     '<div class="nav-caption">工作空间</div><nav class="main-nav" aria-label="主导航">' + nav + '</nav>' +
     '<div class="sidebar-spacer"></div><div class="sidebar-assurance"><span class="assurance-icon">' + icon('link', 16) + '</span><span><b>证据可追溯</b><small>结论可解释 · 人机协同</small></span></div>' +
 
@@ -194,7 +193,7 @@ function renderReportText(review, selectedId) {
       const url=e.source_url || e.context_url;
       if(!url)return;
       const relation=({SUPPORTS:'支持证据',PARTIALLY_SUPPORTS:'部分支持',CONTRADICTS:'反向证据',IRRELEVANT:'相关候选待核验'})[e.relation] || '检索来源';
-      parts.push('<span class="inline-evidence"><a class="evidence-link" target="_blank" rel="noopener" href="'+esc(workbenchApi.link(url))+'" aria-label="打开 '+esc(e.source)+' 原文件">[证据 '+(index+1)+']</a><span class="evidence-hover" role="tooltip"><b>'+esc(e.source)+(e.page?' · 第 '+esc(e.page)+' 页':'')+'</b><small>'+esc(relation)+'</small><p>'+esc(evidenceText(e.quote || e.content).slice(0,650))+'</p><small>点击链接打开原件 · '+esc(e.document_version)+'</small></span></span>');
+      parts.push('<span class="inline-evidence"><a class="evidence-link" data-inline-evidence="'+esc(e.evidence_id)+'" data-inline-finding="'+esc(item.id)+'" data-inline-review="'+esc(review.reviewId)+'" href="/review/'+encodeURIComponent(review.reviewId)+'/workspace?finding='+encodeURIComponent(item.id)+'" aria-label="在证据区打开 '+esc(e.source)+' 原文件">[证据 '+(index+1)+']</a><span class="evidence-hover" role="tooltip"><b>'+esc(e.source)+(e.page?' · 第 '+esc(e.page)+' 页':'')+'</b><small>'+esc(relation)+'</small><p>'+esc(evidenceText(e.quote || e.content).slice(0,650))+'</p><small>点击在证据区查看原件 · '+esc(e.document_version)+'</small></span></span>');
     });
     cursor = item.end;
   }
@@ -205,21 +204,29 @@ function renderReportText(review, selectedId) {
 
 function emptyState(title, copy) { return `<div class="empty-state"><span class="empty-icon">${icon('search',22)}</span><b>${title}</b><small>${copy}</small></div>`; }
 
-function renderEvidence(review, finding, selectedEvidenceId, sourceView = 'extracted') {
-  const evidence = finding.evidence;
-  const selected = evidence.find(e=>e.evidence_id===selectedEvidenceId) || evidence[0];
-  if (!selected) return emptyState('尚无可用证据', '请补充参考资料，或在人工复核区检索其他来源。');
-  const pdfPath=evidencePdfPath(selected);
-  const showPdf=sourceView==='pdf' && pdfPath;
-  const rendered=renderEvidenceContent(selected.content,selected.quote);
-  const hasHighlights=rendered.includes('class="evidence-highlight"');
-  return `<div class="evidence-selector"><label for="selected-evidence">来源证据 · ${evidence.length} 条</label><select id="selected-evidence" class="text-input">${evidence.map((e,i)=>`<option value="${esc(e.evidence_id)}" ${e.evidence_id===selected.evidence_id?'selected':''}>${i+1}. ${esc(e.source || '未命名来源')}${e.page?' · 第 '+esc(e.page)+' 页':''}</option>`).join('')}</select></div>
-  <div class="source-relation"><span class="relation-label ${esc(String(selected.relation).toLowerCase())}">${esc(relationLabel(selected.relation))}</span>${selected.rationale?'<p>'+esc(selected.rationale.replace(/Child/g,'本条结论'))+'</p>':''}</div>
-  <div class="source-view-tabs" role="group" aria-label="证据阅读方式"><button data-action="evidence-extracted" aria-pressed="${!showPdf}">渲染内容</button>${pdfPath?'<button data-action="evidence-pdf" aria-pressed="'+!!showPdf+'">PDF 原件</button>':''}</div>
-  <article class="document-paper"><div class="paper-toolbar">${icon('file',16)}<b>${esc(selected.source || '来源原文')}</b><span>${selected.page?'第 '+esc(selected.page)+' 页':'文本资料'}</span></div>${showPdf?'<div class="pdf-source-view is-loading"><p class="pdf-load-status" role="status">正在渲染 PDF 来源页…</p><div class="pdf-page-scroll" tabindex="0" role="region" aria-label="PDF 页面预览，可滚动查看"><img data-pdf-page-image class="pdf-page-image" alt="'+esc(selected.source)+'，第 '+esc(selected.page || 1)+' 页原件；高亮为本页匹配到的引用文字或数值" src="'+esc(workbenchApi.link(evidencePreviewPath(selected)))+'" /></div><p class="pdf-preview-error" hidden>本页预览暂时不可用。请切换「渲染内容」，或打开 PDF 原件。</p><p class="pdf-view-note">展示 PDF 原页截图；仅对本页实际匹配到的引用文字或数值高亮，不改写原件。<a target="_blank" rel="noopener" href="'+esc(workbenchApi.link(pdfPath))+'">打开 PDF 原件</a></p></div>':'<div class="paper-body">'+(selected.section?'<h3>'+esc(selected.section)+'</h3>':'')+(hasHighlights?'<p class="evidence-highlight-legend"><span></span>高亮为本条核验引用的片段，支持关系见上方判定。</p>':'')+rendered+'</div>'}</article>
-  ${!showPdf && /<table\b/i.test(selected.content || '')?'<p class="extraction-note">表格按提取结构还原；如有合并、错行或数字断行，请对照 PDF 原件确认。</p>':''}
-  <div class="evidence-actions">${selected.source_url || selected.context_url ? '<a target="_blank" rel="noopener" class="outline-button small" href="'+esc(workbenchApi.link(selected.context_url || selected.source_url))+'">'+icon('link',15)+'查看来源原文</a>':''}<button class="quiet-button small" data-action="copy-evidence">${icon('file',15)}复制摘录</button></div>
-  <details class="technical-details"><summary>证据技术详情</summary><dl><dt>证据编号</dt><dd>${esc(selected.evidence_id)}</dd><dt>数据期间</dt><dd>${esc(selected.period || '未提供')}</dd><dt>检索相关度（非正确率）</dt><dd>${selected.score != null && Number.isFinite(Number(selected.score))?Number(selected.score).toFixed(3):'未提供'}</dd><dt>资料版本</dt><dd>${esc(selected.document_version || '未提供')}</dd></dl></details>`;
+export function selectEvidence(finding, selectedEvidenceId) {
+  const evidence=finding?.evidence || [];
+  const used=finding?.evidenceIds || [];
+  return evidence.find(e=>e.evidence_id===selectedEvidenceId) || evidence.find(e=>used.includes(e.evidence_id) && e.relation==='SUPPORTS') || evidence.find(e=>used.includes(e.evidence_id) && e.relation!=='IRRELEVANT') || evidence.find(e=>e.relation==='SUPPORTS') || evidence.find(e=>e.relation==='PARTIALLY_SUPPORTS') || evidence[0];
+}
+
+function renderEvidence(review, finding, selectedEvidenceId, sourceView = '', keyword = '', readerState = {}) {
+  const selected=selectEvidence(finding,selectedEvidenceId);
+  if(!selected)return emptyState('等待来源材料','初步检索完成后，点击左侧材料即可在此核对原件。');
+  const pdfPath=evidencePdfPath(selected), isWeb=selected.source_type==='web';
+  const docId=selected.document_id || '';
+  const anchor=(selected.snapshot_url || selected.context_url || '').split('#')[1] || selected.evidence_id.split(':').pop();
+  const showText=sourceView==='extracted';
+  const temporal=selected.temporal || {};
+  const page=Number(readerState.sourcePage || selected.page || 1);
+  const info=readerState.sourceInfo?.[docId] || {};
+  const originalId=(pdfPath?.match(/documents\/([^/]+)/) || [])[1] || docId;
+  const webUrl='/v1/documents/'+encodeURIComponent(docId)+'/original-view?'+new URLSearchParams({highlight:plainEvidenceText(selected.quote || ''),keyword,parent:anchor});
+  const pdfPreview='/v1/documents/'+encodeURIComponent(originalId)+'/pages/'+page+'.png?'+new URLSearchParams({highlight:[plainEvidenceText(selected.quote || ''),keyword].filter(Boolean).join('\n')});
+  return `<div class="original-reader-toolbar"><div class="original-source-heading">${icon('file',18)}<div><b title="${esc(selected.source)}">${esc(selected.source || '来源原件')}</b><small>${isWeb?'原始网页离线快照':pdfPath?'PDF 原件':'原始文本材料'} · ${esc(temporal.data_period || selected.period || '期间未知')}</small></div></div><div class="original-reader-controls">${pdfPath?`<label for="original-page">第</label><input id="original-page" class="text-input page-number-input" type="number" min="1" max="${info.page_count || 1000}" value="${page}" aria-label="原件页码" /><span>页${info.page_count?' / '+info.page_count:''}</span><button class="quiet-button small" data-action="original-page-go">跳转</button>`:''}<label class="sr-only" for="web-evidence-keyword">在原件中高亮关键词</label><input id="web-evidence-keyword" class="text-input original-keyword" value="${esc(keyword)}" placeholder="在原件中查找" /><button class="outline-button small" data-action="highlight-web">高亮定位</button></div></div>
+  <p class="original-reader-note">${isWeb?'保留原始网页结构及可取得的样式；原站脚本已禁用，动态内容可能缺失。':pdfPath?'展示真实 PDF 原页，高亮仅覆盖本页实际匹配的文字，不改写原件。':'按原始文本展示，不添加不存在的页码。'} <button class="text-action" data-action="evidence-${showText?(isWeb?'web':'pdf'):'extracted'}">${showText?'返回原件':'查看正文摘录'}</button></p>
+  ${showText?'<article class="paper-body original-text-fallback">'+renderEvidenceContent(selected.content,selected.quote)+'</article>':isWeb?`<iframe class="web-snapshot-frame original-web-frame" title="原始网页快照，定位引用与关键词" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" src="${esc(workbenchApi.link(webUrl))}"></iframe>`:pdfPath?`<div class="pdf-source-view is-loading original-pdf" data-original-document="${esc(docId)}"><p class="pdf-load-status" role="status">正在读取 PDF 原页…</p><div class="pdf-page-scroll" tabindex="0" role="region" aria-label="PDF 原页，可滚动查看"><img data-pdf-page-image class="pdf-page-image" alt="${esc(selected.source)}，第 ${page} 页原件及实际文字高亮" src="${esc(workbenchApi.link(pdfPreview))}" /></div><p class="pdf-preview-error" hidden>暂时无法读取本页，可打开原件或核对页码后重试。</p></div>`:'<article class="paper-body original-text-fallback">'+renderEvidenceContent(selected.content,selected.quote)+'</article>'}
+  <details class="original-source-details"><summary>来源时间与版本</summary><dl><dt>发布 / 更新</dt><dd>${esc(temporal.published_at || '未知')} / ${esc(temporal.updated_at || '未声明')}</dd><dt>抓取</dt><dd>${esc(temporal.fetched_at || '未记录')}</dd><dt>资料版本</dt><dd>${esc(selected.document_version || '未记录')}</dd><dt>来源定位</dt><dd>${esc(selected.evidence_id)}</dd></dl>${selected.original_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(selected.original_url)+'">打开当前网站原页</a>':pdfPath?'<a target="_blank" rel="noopener" href="'+esc(workbenchApi.link(pdfPath))+'">打开 PDF 原件</a>':''}</details>`;
 }
 
 export function filterFindings(review, state) {
@@ -229,7 +236,7 @@ export function filterFindings(review, state) {
 function renderHumanForm(review, selected) {
   const task=selected.humanTask;
   if (task?.status!=='PENDING') return selected.humanDecision ? `<section class="human-saved"><h3>人工判定已保存</h3>${selected.humanDecision.comment && selected.humanDecision.comment!==selected.reason ? '<p>'+esc(selected.humanDecision.comment)+'</p>':''}${selected.finalText?'<h4>修订后的结论</h4><p>'+esc(selected.finalText)+'</p>':''}<small>复核人：${esc(selected.humanDecision.decided_by || '未提供')}</small></section>` : '<p class="field-hint">此项无需人工确认。可查看来源证据或继续其他复核项。</p>';
-  return `<section class="human-review" data-human-form-key="${esc(review.reviewId+':'+selected.id)}"><h3>提交人工判定</h3><p class="field-hint">先核对右侧证据，再记录你的判断。提交后将继续处理后续结论。</p>
+  return `<section class="human-review" data-human-form-key="${esc(review.reviewId+':'+selected.id)}"><h3>提交人工判定</h3><p class="field-hint">先核对右侧证据，再记录你的判断。提交后保留判定与底稿，更新待办进度。</p>
     <div class="form-field"><label for="human-comment">判定理由 <em>必填</em></label><textarea id="human-comment" class="text-area comment-input" required placeholder="说明证据如何支持、反驳或不足以核验这条结论"></textarea></div>
     <div class="form-field"><label for="human-reviewer">复核人</label><input id="human-reviewer" class="text-input" value="本机复核人" /></div>
     <fieldset class="human-evidence-options"><legend>采用的证据（可多选）</legend>${selected.evidence.map(e=>`<label><input type="checkbox" name="human-evidence" value="${esc(e.evidence_id)}" /> <span>${esc(e.source || '未命名来源')}${e.page?' · 第 '+esc(e.page)+' 页':''}</span></label>`).join('') || '<p class="field-hint">暂无可选来源，请补充证据或确认证据不足。</p>'}</fieldset>
@@ -240,20 +247,26 @@ function renderHumanForm(review, selected) {
 }
 
 export function renderWorkspace(review, findingId, state) {
-  const filtered = filterFindings(review,state);
-  const selected = filtered.find(f=>f.id===findingId) || filtered[0] || null;
-  const index = selected ? filtered.indexOf(selected) : -1;
+  const filtered=filterFindings(review,state);
+  const selected=filtered.find(f=>f.id===findingId) || filtered[0] || null;
   const base='/review/'+encodeURIComponent(review.reviewId);
-  const items=filtered.map((f,i)=>`<button class="finding-nav-item ${f.id===selected?.id?'active':''}" data-select-finding="${esc(f.id)}" aria-pressed="${f.id===selected?.id}"><span class="finding-nav-num">${String(i+1).padStart(2,'0')}</span><span class="finding-nav-copy"><b>${esc(f.text || '报告整体风险检查')}</b><small>${esc(f.typeLabel)} · ${esc(f.statusLabel)}${f.humanTask?.status==='PENDING'?' · 待确认':''}</small></span></button>`).join('');
-  const detail=selected?`<div class="detail-head"><div class="detail-tag-row">${findingIcon(selected.type)}${riskPill(selected.risk)}${selected.humanTask?.status==='PENDING'?'<span class="status-pill amber">待人工确认</span>':''}</div><h2>${esc(selected.statusLabel)}</h2><p class="claim-quote">${esc(selected.text)}</p></div>
-    <div class="detail-scroll"><section class="detail-section"><h3>${selected.humanDecision?'人工判定依据':'判定依据'}</h3><p class="body-copy">${esc(selected.reason?.replace(/Child/g,'本条结论') || '请结合来源证据和支持关系核对这条结论。')}</p>${selected.missingNeeds.length?'<div class="gap-note"><b>还需要补充</b><ul>'+selected.missingNeeds.map(n=>'<li>'+esc(n)+'</li>').join('')+'</ul></div>':''}</section>
-    ${selected.numericChecks.length?'<section class="detail-section"><h3>数值核算</h3>'+selected.numericChecks.map(c=>`<div class="numeric-check-card"><b>${esc(c.expression || c.kind || '数值核算')}</b><p>报告值：${esc(c.expected ?? '未提供')} · 核算值：${esc(c.observed ?? '未计算')}</p><p>${esc(c.passed===true?'核算一致':c.passed===false?'核算不一致':c.failure_reason || '待人工核对')}</p></div>`).join('')+'</section>':''}
-    <section class="detail-section">${renderHumanForm(review,selected)}</section><details class="technical-details"><summary>复核技术详情</summary><dl><dt>复核项编号</dt><dd>${esc(selected.id)}</dd><dt>模型置信度（非正确率）</dt><dd>${esc(({high:'高',medium:'中',low:'低'})[selected.confidence] || selected.confidence || '未提供')}</dd></dl></details></div>` : emptyState('没有匹配的复核项','调整筛选条件，或清除筛选查看全部结论。');
-  return `<div class="workspace-toolbar"><div class="workspace-report-title"><a class="back-link" href="${base}/overview" data-nav>${icon('chevron',16)}返回总览</a><div><h1>${esc(review.raw.report_name || review.reportId || '逐项复核')}</h1><p>${workflowLabel(review.workflowStatus)} · ${review.findings.length} 项结论</p></div></div><div class="heading-actions"><button class="outline-button" data-action="toggle-compare" aria-pressed="${state.compareMode}">${icon('align',16)}${state.compareMode?'收起报告原文':'对照报告原文'}</button><a class="outline-button" href="${base}/export" data-nav>${icon('download',16)}导出</a><button class="quiet-button" data-audit-job="${esc(review.reviewId)}">流程底稿</button></div></div>
-  ${state.compareMode?'<details class="report-context" open><summary>报告原文 · 点击高亮定位复核项</summary><div class="report-reader">'+renderReportText(review,selected?.id)+'</div></details>':''}
-  <section class="workspace-grid ${state.evidenceExpanded?'evidence-expanded':''}"><aside class="workspace-column finding-column"><div class="column-head"><h2>复核清单</h2><span>${filtered.length} / ${review.findings.length}</span></div><div class="report-filters"><select id="filter-type" aria-label="按问题类型筛选"><option value="">全部类型</option>${[...new Set(review.findings.map(f=>f.type))].map(t=>`<option value="${esc(t)}" ${state.typeFilter===t?'selected':''}>${esc(typeLabel(t))}</option>`).join('')}</select><select id="filter-risk" aria-label="按风险筛选"><option value="">全部风险</option>${[['high','高风险（含严重）'],['medium','中风险'],['low','低风险']].map(([v,l])=>`<option value="${v}" ${state.riskFilter===v?'selected':''}>${l}</option>`).join('')}</select><label class="pending-filter"><input type="checkbox" id="pending-only" ${state.pendingOnly?'checked':''} />只看待人工确认</label><button class="text-action" data-action="clear-filters">清除筛选</button></div><div class="finding-nav-list">${items || '<p class="filter-empty">没有匹配项</p>'}</div></aside>
-  <section class="workspace-column issue-column" aria-label="结论核验与人工判定">${detail}<div class="finding-pagination"><button class="quiet-button" data-action="previous-finding" ${index<=0?'disabled':''}>上一项</button><span>${index<0?0:index+1} / ${filtered.length}</span><button class="quiet-button" data-action="next-finding" ${index<0 || index===filtered.length-1?'disabled':''}>下一项</button></div></section>
-  <section class="workspace-column evidence-column" aria-label="来源证据"><div class="column-head"><h2>来源证据</h2><button class="quiet-button small" data-action="toggle-evidence-width" aria-pressed="${!!state.evidenceExpanded}">${state.evidenceExpanded?'返回复核':'展开阅读'}</button></div><div class="evidence-body">${selected?renderEvidence(review,selected,state.selectedEvidenceId,state.sourceView):emptyState('选择一条结论','来源证据将随复核项联动显示。')}</div></section></section>`;
+  const items=filtered.map((f,i)=>{
+    const chosen=f.id===selected?.id;
+    const preferred=selectEvidence(f,state.selectedEvidenceId);
+    const rank=e=>(e.evidence_id===preferred?.evidence_id?100:0)+(f.evidenceIds.includes(e.evidence_id)?10:0)+({SUPPORTS:4,CONTRADICTS:3,PARTIALLY_SUPPORTS:2}[e.relation] || 0);
+    const byOriginal=new Map();
+    for(const e of [...f.evidence].sort((a,b)=>rank(b)-rank(a))){
+      const key=(e.document_id || e.source || e.evidence_id)+':'+(e.page || 'web');
+      if(!byOriginal.has(key))byOriginal.set(key,e);
+    }
+    const materials=[...byOriginal.values()];
+    const label=f.unreviewed?'待检索与判断':['failed','disputed','unresolved_extraction'].includes(f.labelingStatus)?'标签待确认':f.issueTypes.length?f.issueTypes.map(typeLabel).join(' · '):f.status==='CONTRADICTED'?'事实或数值冲突':f.status==='SUPPORTED'?'未发现问题':'类别待确认';
+    return `<article class="review-queue-item ${chosen?'active':''}"><button class="queue-claim" data-select-finding="${esc(f.id)}" aria-pressed="${chosen}"><span class="queue-number">${String(i+1).padStart(2,'0')}</span><span><b>${esc(f.text)}</b><small class="queue-label">${esc(label)}${f.humanTask?.status==='PENDING'?' · 待确认':''}</small></span></button>${chosen?`<div class="queue-item-content">${f.reason?'<p class="queue-issue-reason">'+esc(f.reason.replace(/Child/g,'本条结论'))+'</p>':''}<h3>初步检索的原材料 <span>${materials.length}</span></h3><div class="queue-materials">${materials.map((e,index)=>`<button class="queue-material ${selectEvidence(f,state.selectedEvidenceId)?.evidence_id===e.evidence_id?'selected':''}" data-select-evidence="${esc(e.evidence_id)}" data-material-finding="${esc(f.id)}" title="${esc(e.source)}"><span>${icon('file',15)}<b>${esc(e.source || '未命名原件')}</b></span><small>${e.page?'第 '+esc(e.page)+' 页 · ':''}${esc(e.temporal?.data_period || e.period || e.parent_id || '期间待确认')} · ${esc(relationLabel(e.relation))}</small></button>`).join('') || '<p class="field-hint">'+(f.unreviewed?'尚未处理此项，检索到的材料将在这里出现。':'未取得可用原材料，保留待人工补充。')+'</p>'}</div><details class="queue-adjudication"><summary>${f.humanTask?.status==='PENDING'?'人工确认此项':'查看复核记录'}</summary>${renderHumanForm(review,f)}</details></div>`:''}</article>`;
+  }).join('');
+  return `<div class="workspace-toolbar"><div class="workspace-report-title"><a class="back-link" href="${base}/overview" data-nav>${icon('chevron',16)}返回总览</a><div><h1>${esc(review.raw.report_name || review.reportId || '报告复核')}</h1><p>${workflowLabel(review.workflowStatus)} · ${review.findings.length} 项 · ${review.findings.filter(f=>f.humanTask?.status==='PENDING').length} 项待人工确认</p></div></div><div class="heading-actions"><button class="outline-button" data-action="toggle-compare" aria-pressed="${!!state.compareMode}">${state.compareMode?'收起待核报告':'查看待核报告'}</button><a class="outline-button" href="${base}/export" data-nav>${icon('download',16)}下载</a><button class="quiet-button" data-audit-job="${esc(review.reviewId)}">工作底稿</button></div></div>
+  ${state.compareMode?'<details class="report-context" open><summary>待复核报告原文</summary><div class="report-reader">'+renderReportText(review,selected?.id)+'</div></details>':''}
+  <section class="review-desk"><aside class="workspace-column review-queue" aria-label="待复核列表"><div class="column-head"><h2>待复核列表</h2><span>${filtered.length} 项</span></div><div class="queue-filters"><label class="pending-filter"><input type="checkbox" id="pending-only" ${state.pendingOnly?'checked':''} />只看待人工确认</label><label class="sr-only" for="filter-type">问题类别</label><select id="filter-type" aria-label="按问题类型筛选"><option value="">全部类别</option>${[...new Set(review.findings.map(f=>f.type))].map(t=>'<option value="'+esc(t)+'" '+(state.typeFilter===t?'selected':'')+'>'+esc(typeLabel(t))+'</option>').join('')}</select><button class="text-action" data-action="clear-filters">清除筛选</button></div><div class="finding-nav-list">${items || emptyState('没有匹配的复核项','调整筛选条件，或清除筛选查看全部结论。')}</div></aside>
+  <section class="workspace-column original-material-column" aria-label="原始材料"><div class="column-head"><h2>原始材料</h2><span>定位到原件核对</span></div><div class="evidence-body">${selected?renderEvidence(review,selected,state.selectedEvidenceId,state.sourceView,state.webKeyword,state):emptyState('选择一条结论','原始 PDF 或网页将显示在这里。')}</div></section></section>`;
 }
 
 export function renderHistory(history) {

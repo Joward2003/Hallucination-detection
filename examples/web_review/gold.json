@@ -1,0 +1,293 @@
+{
+  "version": "public-financial-devset-v1.1",
+  "sources": {
+    "S1": "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast",
+    "S2": "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/",
+    "S3": "https://www.microsoft.com/en-us/investor/earnings/fy-2024-q4/press-release-webcast"
+  },
+  "cases": [
+    {
+      "id": "C01",
+      "fact": "微软2025财年第四季度营业收入为764亿美元。",
+      "source_start": 137,
+      "source_end": 161,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [],
+      "gold_status": "SUPPORTED",
+      "gold_reason": "原披露为76.4 billion美元。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "C02",
+      "fact": "微软2025财年第四季度营业利润为343亿美元。",
+      "source_start": 174,
+      "source_end": 198,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [],
+      "gold_status": "SUPPORTED",
+      "gold_reason": "原披露为34.3 billion美元。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "C03",
+      "fact": "苹果2025财年第三季度营业收入为940亿美元。",
+      "source_start": 211,
+      "source_end": 235,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [],
+      "gold_status": "SUPPORTED",
+      "gold_reason": "苹果中文新闻稿直接披露该金额。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "C04",
+      "fact": "微软披露网络攻击可能增加成本、引发责任索赔并影响声誉，授信复核需关注这一风险。",
+      "source_start": 248,
+      "source_end": 287,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [],
+      "gold_status": "SUPPORTED",
+      "gold_reason": "风险披露为条件性风险，不能改写成已经发生。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E01",
+      "fact": "微软2025财年第四季度所有银行借款均已足额偿付，未来一年不存在任何到期债务。",
+      "source_start": 300,
+      "source_end": 339,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "insufficient_evidence",
+        "fact_mismatch"
+      ],
+      "gold_status": "CONTRADICTED",
+      "gold_reason": "混合问题：原披露表中存在到期长期债务与长期债务，和未来一年没有任何到期债务的表述冲突；新闻稿也不能证明所有银行借款已清偿。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E02",
+      "fact": "苹果2025财年第三季度全部客户均在30天内付款，未出现任何应收款逾期。",
+      "source_start": 352,
+      "source_end": 388,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "insufficient_evidence"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "引用缺少账龄和收款明细，不可从营收推断。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E03",
+      "fact": "微软2025财年第四季度营业收入为764亿美元。",
+      "source_start": 401,
+      "source_end": 425,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "citation_mismatch"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "数值本身正确，但链接指向苹果，不能支持微软。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E04",
+      "fact": "苹果2025财年第三季度营业收入为940亿美元。",
+      "source_start": 438,
+      "source_end": 462,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "citation_mismatch"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "数值本身正确，但链接指向微软。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E05",
+      "fact": "微软的云与AI业务将必然持续高速增长，授信资金可保证按期足额回收。",
+      "source_start": 475,
+      "source_end": 508,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "overstatement"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "将历史表现及管理层展望扩大为必然和回收保证。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E06",
+      "fact": "苹果的季度收入创同期纪录，证明其未来经营不会受到经济环境或法规变化的任何影响。",
+      "source_start": 521,
+      "source_end": 560,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "overstatement"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "绝对化结论与前瞻性不确定风险披露不符。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E07",
+      "fact": "微软2025财年第四季度收入增长，因此可以直接认定其短期偿债能力显著增强，并上调授信额度。",
+      "source_start": 573,
+      "source_end": 618,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "reasoning_gap"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "缺少债务、流动性、现金流及授信约束等中间依据。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E08",
+      "fact": "苹果2025财年第三季度收入增长，因此可以推定全部供应商经营稳健，无需再核查供应链集中度。",
+      "source_start": 631,
+      "source_end": 676,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "reasoning_gap"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "公司收入增长不能推出全部供应商稳定。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E09",
+      "fact": "微软授信风险清单：本次仅识别外汇汇率波动风险，风险识别工作至此完成。",
+      "source_start": 689,
+      "source_end": 723,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2025-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "risk_omission"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "报告风险清单遗漏原披露中的网络安全、云AI执行及竞争风险。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "E10",
+      "fact": "苹果授信风险清单：本次仅列产品销售季节性，风险监测据此安排。",
+      "source_start": 736,
+      "source_end": 766,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "risk_omission"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "遗漏原披露的信息系统、第三方依赖、法律与政策风险。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "T01",
+      "fact": "微软2025财年第四季度营业收入为764亿美元。",
+      "source_start": 779,
+      "source_end": 803,
+      "citation_urls": [
+        "https://www.microsoft.com/en-us/investor/earnings/fy-2024-q4/press-release-webcast"
+      ],
+      "gold_issue_types": [
+        "citation_mismatch"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "引用2024财年Q4，期间与2025财年Q4不匹配。",
+      "temporal_policy": {
+        "as_of": "2026-10-16",
+        "mode": "historical"
+      }
+    },
+    {
+      "id": "T02",
+      "fact": "以2025-07-30为信息截止日，苹果2025财年第三季度营业收入为940亿美元。",
+      "source_start": 816,
+      "source_end": 858,
+      "citation_urls": [
+        "https://www.apple.com.cn/newsroom/2025/07/apple-reports-third-quarter-results/"
+      ],
+      "gold_issue_types": [
+        "citation_mismatch"
+      ],
+      "gold_status": "INSUFFICIENT_EVIDENCE",
+      "gold_reason": "单项信息截止日2025-07-30早于新闻稿发布，且现有快照后续更新。",
+      "temporal_policy": {
+        "as_of": "2025-07-30",
+        "mode": "historical"
+      }
+    }
+  ],
+  "limitations": "人工设计的16项工程联调样本，非随机样本、非独立盲测；单项边界已给定，结论抽取和报告整体风险覆盖另测。T02使用更早的单项截止日。",
+  "label_review_note": "E01核对完整财务表后补充事实冲突标签；五类主要问题允许重叠。该复审不是盲标。"
+}
