@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 from credit_review.domain.invariants import validate_fact_groups
+from credit_review.agents.deepseek_agents import DeepSeekQueryPlanner
+from .numeric import NUMBER, UNITS, compute_check, number_present, NumericValidator
 
 ISSUES = {'insufficient_evidence', 'citation_mismatch', 'overstatement', 'reasoning_gap', 'risk_omission', 'fact_mismatch'}
 RELATIONS = {'SUPPORTS', 'PARTIALLY_SUPPORTS', 'IRRELEVANT', 'CONTRADICTS'}
@@ -15,143 +17,122 @@ def ask(gateway, task, data):
 
 
 def _split_report_into_parents(text: str, max_chunk_size: int = 800) -> list[tuple[str, int, int]]:
-    """
-    Deterministically split report into parent blocks by paragraphs/sections.
-    This guarantees 100% coverage and avoids LLM token limits.
-
-    Returns: [(parent_text, start_offset, end_offset), ...]
-    """
-    # Split by double newlines (paragraphs) or section markers
-    blocks = []
-
-    # First, try to split by clear section boundaries
-    section_pattern = r'(?:^|\n)(?:[一二三四五六七八九十]+、|[0-9]+\.|[0-9]+、|\([一二三四五六七八九十]+\))'
-    sections = re.split(f'({section_pattern})', text)
-
-    current_chunk = ""
-    chunk_start = 0
-
-    for i, part in enumerate(sections):
-        # If adding this part would exceed limit, save current chunk
-        if current_chunk and len(current_chunk + part) > max_chunk_size:
-            if current_chunk.strip():
-                start = chunk_start
-                end = start + len(current_chunk)
-                blocks.append((current_chunk.strip(), start, end))
-            current_chunk = part
-            chunk_start = chunk_start + len(current_chunk)
-        else:
-            current_chunk += part
-
-    # Add final chunk
-    if current_chunk.strip():
-        start = chunk_start
-        end = start + len(current_chunk)
-        blocks.append((current_chunk.strip(), start, end))
-
-    # Fallback: if no good splits, use simple paragraph split
-    if not blocks or len(blocks) == 1:
-        blocks = []
-        paragraphs = text.split('\n\n')
-        offset = 0
-        for para in paragraphs:
-            if para.strip():
-                start = text.find(para, offset)
-                end = start + len(para)
-                blocks.append((para.strip(), start, end))
-                offset = end
-
+    """Bounded original slices, with exact offsets and no discarded characters."""
+    if not isinstance(max_chunk_size, int) or isinstance(max_chunk_size, bool) or max_chunk_size <= 0:
+        raise ValueError('max_chunk_size 必须为正整数')
+    if not isinstance(text, str):
+        raise ValueError('报告正文必须为文本')
+    if not text.strip():
+        return []
+    blocks, start = [], 0
+    section = re.compile(r'(?m)^[ \t]*(?:[一二三四五六七八九十]+、|\d+[.、]|[（(][一二三四五六七八九十]+[）)])')
+    while start < len(text):
+        end = min(start + max_chunk_size, len(text))
+        if end < len(text):
+            window = text[start:end]
+            minimum = max(1, max_chunk_size // 3)
+            boundaries = [m.start() for m in section.finditer(window) if m.start() >= minimum]
+            if not boundaries:
+                boundaries = [m.end() for m in re.finditer(r'\n[ \t]*\n', window) if m.end() >= minimum]
+            if not boundaries:
+                boundaries = [m.end() for m in re.finditer(r'[。！？!?；;][”’」』]?', window) if m.end() >= minimum]
+            if boundaries:
+                end = start + boundaries[-1]
+        blocks.append((text[start:end], start, end))
+        start = end
     return blocks
+
+
+def _meaningful(text):
+    return any(ch.isalnum() for ch in text)
 
 
 class Extractor:
     def __init__(self, gateway):
         self.gateway = gateway
 
-    def extract(self, original_input):
-        """
-        Two-stage extraction:
-        1. Deterministically split report into parent blocks (Python)
-        2. LLM extracts children facts from each parent block
-        """
-        # Stage 1: Deterministic parent splitting
-        parent_blocks = _split_report_into_parents(original_input)
+    def _record(self, stage, body):
+        if hasattr(self.gateway, 'record'):
+            self.gateway.record(stage, body)
 
+    def extract(self, original_input):
+        parent_blocks = _split_report_into_parents(original_input)
         if not parent_blocks:
             raise ValueError('无法分段报告，请检查输入格式。')
-
-        # Stage 2: LLM extracts children from each parent
+        self._record('extraction_segments', {'segments': [
+            {'text': text, 'source_start': start, 'source_end': end} for text, start, end in parent_blocks],
+            'max_characters': 800, 'boundary': '原文分段完整性不等于业务结论抽取完整性。'})
         groups = []
         for index, (parent_text, start, end) in enumerate(parent_blocks, 1):
+            if not _meaningful(parent_text):
+                continue
             parent_id = f'P{index:04d}'
-
-            # Ask LLM to extract children from this parent block only
-            data = ask(
-                self.gateway,
-                '从这段报告中提取独立可验证的结论。输出 {"children":[{"fact":"独立结论","source_quote":"该结论对应的连续原文","importance":"low|medium|high|critical"}]}。source_quote 必须逐字来自输入文本。禁止新增数字。',
-                {'parent_segment': parent_text}
-            )
-
-            raw_children = data.get('children', [])
-            if not isinstance(raw_children, list):
-                raise ValueError(f'段落 {parent_id} 未返回有效的结论列表。')
-
+            parent = {'parent_id': parent_id, 'parent_text': parent_text, 'source_start': start, 'source_end': end}
+            covered = [False] * len(parent_text)
             children = []
-            for num, child in enumerate(raw_children, 1):
-                source = child.get('source_quote', '')
-                fact = child.get('fact', '')
-
-                if not source or source not in parent_text or not fact:
-                    continue  # Skip invalid children
-
-                # Verify no new numbers introduced
-                if not set(re.findall(r'\d+(?:\.\d+)?', fact)) <= set(re.findall(r'\d+(?:\.\d+)?', parent_text)):
-                    continue  # Skip children with fabricated numbers
-
-                offset = start + parent_text.find(source)
-                importance = child.get('importance', 'medium')
-                if importance not in {'low', 'medium', 'high', 'critical'}:
-                    importance = 'medium'
-
-                children.append({
-                    'fact_id': f'{parent_id}-F{num:02d}',
-                    'parent_id': parent_id,
-                    'fact': fact,
-                    'source_start': offset,
-                    'source_end': offset + len(source),
-                    'importance': importance
-                })
-
-            parent = {
-                'parent_id': parent_id,
-                'parent_text': parent_text,
-                'source_start': start,
-                'source_end': end
-            }
-
+            try:
+                data = ask(self.gateway,
+                    '从这段报告中提取所有独立可验证的结论，保留主体、期间、口径、风险及不确定性。输出 {"children":[{"fact":"独立结论","source_quote":"该结论对应的连续原文","importance":"low|medium|high|critical"}]}。source_quote 必须逐字来自输入文本，禁止新增数字或转换数值。标题或无法提取时返回空列表，系统会保留待人工核对的原文。',
+                    {'parent_segment': parent_text})
+                raw_children = data.get('children') if isinstance(data, dict) else None
+                if not isinstance(raw_children, list):
+                    raise ValueError('模型未返回有效的 children 列表')
+            except Exception as exc:
+                self._record('extraction_segment_failed', {'parent_id': parent_id, 'error_type': type(exc).__name__, 'action': '保留原文待人工核对，继续其他段落'})
+                raw_children = []
+            for raw in raw_children:
+                try:
+                    if not isinstance(raw, dict):
+                        raise ValueError('复核点结构无效')
+                    source, fact = raw.get('source_quote'), raw.get('fact')
+                    if not isinstance(source, str) or not _meaningful(source) or source not in parent_text or not isinstance(fact, str) or not _meaningful(fact):
+                        raise ValueError('独立复核点缺少有效原文锚点')
+                    if not {m.group().replace(',', '') for m in re.finditer(NUMBER, fact)} <= {m.group().replace(',', '') for m in re.finditer(NUMBER, source)}:
+                        raise ValueError('独立复核点引入引用原文中不存在的数字')
+                    importance = raw.get('importance', 'medium')
+                    if importance not in {'low', 'medium', 'high', 'critical'}:
+                        raise ValueError('复核点风险等级无效')
+                    # Repeated source text is anchored to the first not-yet-covered occurrence.
+                    positions = [m.start() for m in re.finditer(re.escape(source), parent_text)]
+                    offset = next((p for p in positions if not all(covered[p:p+len(source)])), positions[0])
+                    covered[offset:offset+len(source)] = [True] * len(source)
+                    children.append({'fact_id': f'{parent_id}-F{len(children)+1:02d}', 'parent_id': parent_id,
+                                     'fact': fact, 'source_quote': source, 'source_start': start+offset,
+                                     'source_end': start+offset+len(source), 'importance': importance})
+                except (ValueError, TypeError) as exc:
+                    self._record('extraction_child_rejected', {'parent_id': parent_id, 'candidate': raw, 'reason': str(exc)})
+            # Uncovered meaningful source ranges never disappear. They become explicit
+            # unresolved human review items, rather than model-generated conclusions.
+            gap_start = None
+            for position in range(len(parent_text)+1):
+                is_gap = position < len(parent_text) and not covered[position]
+                if is_gap and gap_start is None:
+                    gap_start = position
+                if not is_gap and gap_start is not None:
+                    quote = parent_text[gap_start:position]
+                    if _meaningful(quote):
+                        child = {'fact_id': f'{parent_id}-F{len(children)+1:02d}', 'parent_id': parent_id,
+                                 'fact': quote, 'source_quote': quote, 'source_start': start+gap_start,
+                                 'source_end': start+position, 'importance': 'high', 'review_kind': 'extraction_gap',
+                                 'extraction_status': 'unresolved'}
+                        children.append(child)
+                        self._record('extraction_gap', {'parent_id': parent_id, 'child': child, 'reason': '此段原文未得到有效结论抽取，必须人工核对'})
+                    gap_start = None
             groups.append({'parent': parent, 'children': children})
-
+        if not groups:
+            raise ValueError('报告未包含可复核的正文。')
         validate_fact_groups(groups)
-
-        # Verification: All parent blocks cover the original text
-        covered = set()
         for group in groups:
-            covered.update(range(group['parent']['source_start'], group['parent']['source_end']))
-
-        # Allow small gaps (e.g., extra whitespace) but warn if significant text missing
-        uncovered_chars = [ch for i, ch in enumerate(original_input) if i not in covered and not ch.isspace()]
-        if len(uncovered_chars) > len(original_input) * 0.05:  # More than 5% uncovered
-            self.gateway.record('extraction_warning', {
-                'message': f'约 {len(uncovered_chars)} 个字符未被父块覆盖，可能影响完整性。',
-                'uncovered_sample': ''.join(uncovered_chars[:100])
-            })
-
+            parent = group['parent']
+            if original_input[parent['source_start']:parent['source_end']] != parent['parent_text']:
+                raise ValueError('父块原文定位校验失败')
+            for child in group['children']:
+                if original_input[child['source_start']:child['source_end']] != child['source_quote']:
+                    raise ValueError('子结论原文定位校验失败')
+        self._record('extraction_summary', {'parent_count': len(groups),
+            'unresolved_count': sum(c.get('review_kind') == 'extraction_gap' for g in groups for c in g['children']),
+            'source_slice_validation': 'passed'})
         return groups
-
-
-# Rest of the file remains unchanged (Planner, Grader, Verifier, etc.)
-from credit_review.agents.deepseek_agents import DeepSeekQueryPlanner
-from decimal import Decimal, InvalidOperation
 
 
 class Planner(DeepSeekQueryPlanner):
@@ -194,11 +175,17 @@ class Verifier:
         self.bindings = {}
 
     def verify(self, child, parent, evidence, assessments, evidence_status):
+        if child.get('review_kind') == 'extraction_gap':
+            self.bindings[child['fact_id']] = []
+            return {'status': 'INSUFFICIENT_EVIDENCE', 'confidence': 'low',
+                    'reason': '此段原文未完成可靠结论抽取，须人工核对，不能自动认定通过。',
+                    'evidence_ids': [], 'counter_evidence_ids': [], 'citation_quotes': [],
+                    'issue_types': ['insufficient_evidence']}
         task = ('判断支持关系及五类问题，不能以数字相似代替匹配期间与指标。输出 '
                 '{"status":"SUPPORTED|CONTRADICTED|INSUFFICIENT_EVIDENCE","confidence_band":"low|medium|high","reason":"摘要",'
                 '"evidence_ids":[],"issue_types":[],"citation_quotes":[{"evidence_id":"...","quote":"逐字原文"}],'
                 '"numeric_checks":[{"kind":"amount|ratio|yoy","report_quote":"待检数值的报告原文", "expected":"报告数值", "unit":"元|万元|亿元|%|倍", '
-                '"operands":{"current或numerator或denominator或previous":{"value":"原文数字","unit":"元|万元|亿元|%|倍","metric":"指标名","period":"年份", "evidence_id":"...","quote":"包含指标、期间、数字、单位的连续证据原文"}}}]}。'
+                '"operands":{"current或numerator或denominator或previous":{"value":"原文数字","unit":"元|万元|亿元|%|倍","metric":"指标名","period":"年份", "evidence_id":"...","quote":"仅含一个数量短语，且包含指标、单一期间、数字和单位的连续原文；多年度表格无法唯一定位时留空"}}}]}。'
                 '你只选择计算操作数，绝不计算；程序完成计算。amount使用current，ratio使用numerator/denominator，yoy使用current/previous。无法可靠绑定操作数时留空。')
         task += ' issue_types 只能使用以下分类标识：' + ', '.join(sorted(ISSUES)) + '。period 只输出四位年份，例如 2024。'
         data = ask(self.gateway, task, {'claim': child['fact'], 'parent_context': parent['parent_text'], 'evidence': evidence, 'assessments': assessments, 'evidence_status': evidence_status})
@@ -238,66 +225,15 @@ class Verifier:
                 'counter_evidence_ids': [i for i in ids if relations.get(i) == 'CONTRADICTS']}
 
 
-UNITS = {'元': Decimal(1), '万元': Decimal(10000), '亿元': Decimal(100000000), '%': Decimal(1), '倍': Decimal(1)}
-NUMBER = r'-?\d[\d,]*(?:\.\d+)?'
 
-
-def number_present(value, text):
-    return any(Decimal(match.replace(',', '')) == value for match in re.findall(NUMBER, text))
-
-
-def compute_check(spec, fact, evidence):
-    """The model selects bindings; local code validates quotes and uses Decimal."""
-    result = {**spec, 'passed': None, 'observed': None, 'validator_version': 'decimal-financial-v1', 'tolerance': '0.01'}
-    try:
-        expected = Decimal(str(spec['expected']).replace(',', ''))
-        quote = spec['report_quote']
-        if quote not in fact or not number_present(expected, quote):
-            raise ValueError('报告数值引用无效')
-        unit = spec['unit']
-        if unit not in UNITS or unit not in quote:
-            raise ValueError('报告单位未明确匹配')
-        known = {e['evidence_id']: e for e in evidence}
-        operands = {}
-        for name, binding in spec['operands'].items():
-            source = known[binding['evidence_id']]
-            text = binding['quote']
-            value = Decimal(str(binding['value']).replace(',', ''))
-            period = str(binding.get('period') or '')
-            if not text or text not in source['content'] or not number_present(value, text):
-                raise ValueError('操作数未匹配逐字证据')
-            if not binding.get('metric') or binding['metric'] not in text:
-                raise ValueError('操作数指标未匹配原文')
-            if not period or (period not in text and period != str(source.get('period') or '')):
-                raise ValueError('操作数期间缺少原文或来源元数据支持')
-            binding_unit = binding['unit']
-            if binding_unit not in UNITS or binding_unit not in text:
-                raise ValueError('操作数单位未匹配原文')
-            operands[name] = value * UNITS[binding_unit]
-        kind = spec['kind']
-        if kind == 'amount':
-            observed = operands['current'] / UNITS[unit]
-            expression = 'current / report_unit_scale'
-        elif kind == 'ratio':
-            if unit not in {'%', '倍'} or spec['operands']['numerator']['period'] != spec['operands']['denominator']['period']:
-                raise ValueError('比率单位或分子分母期间不一致')
-            if (spec['operands']['numerator']['unit'] in {'元', '万元', '亿元'}) != (spec['operands']['denominator']['unit'] in {'元', '万元', '亿元'}):
-                raise ValueError('比率操作数量纲不一致')
-            observed = operands['numerator'] / operands['denominator'] * (100 if unit == '%' else 1)
-            expression = 'numerator / denominator * report_scale'
-        elif kind == 'yoy':
-            if unit != '%' or spec['operands']['current']['metric'] != spec['operands']['previous']['metric']:
-                raise ValueError('同比单位或指标口径不一致')
-            periods = [str(spec['operands'][n]['period']) for n in ('current', 'previous')]
-            if not all(re.fullmatch(r'20\d{2}', p) for p in periods) or int(periods[0]) - int(periods[1]) != 1:
-                raise ValueError('同比操作数并非连续两年')
-            observed = (operands['current'] - operands['previous']) / abs(operands['previous']) * 100
-            expression = '(current - previous) / abs(previous) * 100'
-        else:
-            raise ValueError('未知计算类型')
-        tolerance = Decimal(result['tolerance'])
-        passed = abs(observed - expected) <= tolerance
-        result.update(passed=passed, observed=str(observed), expression=expression, failure_reason=None if passed else '超出容忍误差')
-    except (InvalidOperation, ZeroDivisionError, KeyError, ValueError) as exc:
-        result.update(passed=False, failure_reason=f'{type(exc).__name__}: {exc}')
-    return result
+class WorkbenchRiskPolicy:
+    def decide(self, *, child, initial_verdict, rule_hits, has_counter_evidence, **kwargs):
+        reasons = []
+        if child.get('review_kind') == 'extraction_gap': reasons.append('extraction_incomplete')
+        if initial_verdict.get('status') == 'INSUFFICIENT_EVIDENCE': reasons.append('insufficient_evidence')
+        if initial_verdict.get('status') == 'CONTRADICTED' or has_counter_evidence: reasons.append('evidence_conflict')
+        if initial_verdict.get('confidence') == 'low': reasons.append('low_confidence')
+        level = child.get('importance', 'medium')
+        if level in {'high', 'critical'}: reasons.append('important_credit_risk')
+        if any(h.get('required_human_review') or h.get('severity') in {'high', 'critical'} for h in rule_hits): reasons.append('business_rule')
+        return {'next_step': 'human' if reasons else 'finalize', 'risk_level': level, 'reason_codes': reasons}

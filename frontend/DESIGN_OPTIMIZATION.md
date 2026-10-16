@@ -59,9 +59,7 @@ box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
 
 ```
 frontend/
-├── styles.css                    # 已替换为优化版
-├── styles-original-backup.css    # 原始文件备份
-└── styles-improved.css           # 优化版源文件
+└── styles.css                    # 当前实际入口样式
 ```
 
 ## 🎨 设计原则
@@ -72,14 +70,9 @@ frontend/
 4. **清晰层次** - 通过大小、粗细、颜色建立信息层级
 5. **一致性** - 统一圆角、阴影、间距标准
 
-## 🔄 如何回滚
+## 历史版本
 
-如果需要恢复原样式：
-
-```bash
-cd /Users/joward/Desktop/Hallucination/Hallucination_detection/frontend
-cp styles-original-backup.css styles.css
-```
+冗余 CSS 备份已删除，历史样式请从 Git 中查看；不要再使用已删除的备份文件覆盖当前入口。本文为历史设计记录，当前规范以根目录 DESIGN.md 为准。
 
 ## 📊 对比效果
 

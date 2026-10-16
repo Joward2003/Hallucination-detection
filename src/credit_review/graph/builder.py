@@ -595,6 +595,12 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
         }
 
     def verify(state: ReviewState) -> dict[str, Any]:
+        if state['current_fact'].get('review_kind') == 'extraction_gap':
+            result = {'status': 'INSUFFICIENT_EVIDENCE', 'confidence': 'low',
+                      'reason': '此段原文未完成可靠结论抽取，须人工核对，不能自动认定通过。',
+                      'evidence_ids': [], 'counter_evidence_ids': [], 'citation_quotes': [],
+                      'issue_types': ['insufficient_evidence']}
+            return {'verification_result': result, 'initial_verdict': result, 'workflow_status': 'VERIFIED'}
         result = services.verifier.verify(
             state["current_fact"],
             state["current_parent"],
@@ -778,7 +784,10 @@ def build_review_graph(services: MvpServices, *, trace: Callable[[dict[str, Any]
     graph.add_edge(START, entry_node)
     graph.add_edge("extract_parent_child", "resolve_company")
     graph.add_edge("resolve_company", "prepare_child")
-    graph.add_edge("prepare_child", "plan_query")
+    def route_after_prepare(state: ReviewState) -> Literal['verify', 'plan_query']:
+        return 'verify' if state['current_fact'].get('review_kind') == 'extraction_gap' else 'plan_query'
+
+    graph.add_conditional_edges("prepare_child", traced_router("prepare_child", route_after_prepare))
     graph.add_edge("plan_query", "retrieve")
     graph.add_edge("retrieve", "grade_evidence")
     graph.add_conditional_edges("grade_evidence", traced_router("grade_evidence", route_after_grade))

@@ -32,7 +32,7 @@ PYTHONPATH=src .venv/bin/python -m uvicorn credit_review.api.server:app --host 1
 
 桌面为清单、判定、证据三栏；窄屏自然降为两栏或单栏。手机优先阅读来源，再提交判定。支持键盘焦点、主内容跳转、原生表单标签、减少动态效果偏好。
 
-原有 `styles-improved.css`、`styles-original-backup.css`、`lazy-loader.js`、`request-optimizer.js`、`store-enhanced.js` 等此前已有的未提交文件保留；当前入口只加载 `styles.css` 与 `src/main.js` 的实际模块依赖。
+冗余 CSS 备份及未接入的优化脚本已删除。当前入口只加载 `styles.css` 与 `src/main.js` 的实际模块依赖。
 
 ## 验证
 

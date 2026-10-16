@@ -108,9 +108,11 @@ def test_unknown_or_fabricated_citations_never_become_evidence():
 
 def test_extractor_preserves_offsets_and_rejects_missing_coverage():
     class Gateway:
-        def complete_json(self,messages): return {'groups':[{'parent_quote':'收入增长。','children':[{'fact':'收入增长','source_quote':'收入增长'}]}]}
+        def complete_json(self,messages): return {'children':[{'fact':'收入增长','source_quote':'收入增长'}]}
     assert Extractor(Gateway()).extract('收入增长。')[0]['children'][0]['source_end']==4
-    with pytest.raises(ValueError): Extractor(Gateway()).extract('收入增长。风险加大。')
+    children = Extractor(Gateway()).extract('收入增长。风险加大。')[0]['children']
+    assert children[-1]['review_kind'] == 'extraction_gap'
+    assert '风险加大' in children[-1]['fact']
 
 
 def test_real_graph_human_resume_runs_remaining_children():
