@@ -1,0 +1,11 @@
+{
+  "name": "credit-review-ui-tests",
+  "private": true,
+  "scripts": {
+    "test:frontend": "node --test tests/frontend-ui.test.mjs tests/evidence-renderer.test.mjs"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.13"
+  },
+  "type": "module"
+}

@@ -1,42 +1,53 @@
-# AI 金融报告智能复核工作台前端
+# 金融报告智能复核工作台前端
 
-这是当前 Python 项目的轻量浏览器界面。页面不内置复核结果样例；任务、Finding、Evidence、核验状态和检索轨迹都取自现有复核 API。前端把后端的 `completed_results` 适配为视图模型，并以 `fact_id` 和 `evidence_id` 作为稳定联动键。
+原生 JavaScript ES Modules + CSS，由现有 FastAPI 工作台提供静态文件和 `/v1/*` 接口，无需额外前端构建或 Node 运行服务。
 
-## 运行
+## 启动
+
+优先使用项目根目录的 `启动复核工作台.command`。已有环境也可在项目根目录运行：
 
 ```bash
-python -m pip install -e '.[api]'
-credit-review-api
+PYTHONPATH=src .venv/bin/python -m uvicorn credit_review.api.server:app --host 127.0.0.1 --port 8000
 ```
 
-浏览器打开 `http://127.0.0.1:8000`。ASGI 入口位于 `src/credit_review/api/server.py`，同时提供静态前端和原有 `/v1/*` API，因此默认同源访问。当前 API manager 和 review record 都是内存实现；重启服务会清空任务。生产部署前应换成持久化仓储并配置鉴权。
+浏览器打开 `http://127.0.0.1:8000`。API Key 在服务端本机配置，已有密钥不回传浏览器。
 
-默认运行使用项目已有的 deterministic Agent / retrieval 实现。启用 DeepSeek 时，在启动进程环境中设置 `CREDIT_REVIEW_AGENT_BACKEND=deepseek` 与 `DEEPSEEK_API_KEY`，并安装 `python -m pip install -e '.[api,deepseek]'`。是否使用真实向量检索由项目原有 `CREDIT_REVIEW_RETRIEVAL_BACKEND` 等配置决定；界面不会将 deterministic 模式标为生产模型结果。
+## 页面与能力
 
-也可从 `系统设置` 设置其他 API 地址。跨源部署需要由 API 服务自行配置 CORS；同源部署不需要额外配置。
+- 工作概览：服务端任务、运行状态、人工待办。
+- 新建复核：PDF/DOCX/TXT/Markdown 上传与正文输入；选择固定参考资料版本；异步任务进度。
+- 复核任务：名称或编号搜索、状态筛选、结果总览与导出。
+- 逐项复核：清单、唯一判定依据、唯一来源摘录；按需查看报告原文、数值核算与技术详情；补充检索与人工三态判定。
+- 参考资料库：上传解析、按企业归类、勾选发布版本、实际资料检索、原文追溯。MinerU JSON 可以关联 PDF 原件。
+- 资料概览：统计资料覆盖并按企业查看解析明细。
+- 复核规则：服务端规则和人工介入策略的只读展示。
+- 模型连接：模型服务地址、协议、密钥更新；只读展示检索配置。
+- 流程底稿：按执行顺序查看记录，原始技术输入输出按需展开。
 
-## 现有 API 映射
+任务、来源、知识库和底稿由后端 SQLite 与本机文件持久保存。浏览器缓存仅辅助历史元数据；连接成功后以服务端任务为准。原始后端数据与稳定的 fact_id/evidence_id 保留，用户输入及来源文本安全转义。
 
-| 前端行为 | 使用的后端接口 / 字段 |
-| --- | --- |
-| 创建复核 | `POST /v1/reviews`，提交 `report_text` 和可选 `evidence[]` |
-| 复核详情 / 刷新 | `GET /v1/reviews/{review_id}` |
-| 人工队列 | `GET /v1/human-tasks` |
-| 人工判定 | `POST /v1/human-tasks/{review_id}/decision`，提交 `task_version`、三态 `decision`、`comment`、`selected_evidence_ids`、`decided_by` |
-| 报告段落定位 | `fact_groups[].children[].source_start/source_end` |
-| Finding ↔ Claim | 以现有稳定 `fact_id` 关联；当前 schema 没有独立 `finding_id` |
-| Evidence ↔ 原文片段 | `evidence_id`、`content`、`source`、`page`、`section`、`document_id`、`score` |
-| Evidence 关系 / 缺口 | `assessments[]`、`missing_needs[]`、`retrieval_trace[]` |
+## 设计与质量
 
-报告和参考材料文件输入目前仅解析本机 `.txt` / `.md`。参考文本按空行或换行拆成 Evidence，随请求原样提交给当前 API。浏览器本机历史只保留任务 ID、名称、状态和计数，不保存报告正文。CSV 与 JSON 导出在浏览器本机生成。
+设计方案、色彩、信息分工与响应式规范见根目录 `DESIGN.md`，产品边界见 `PRODUCT.md`。
 
-## 后端尚需补充的契约
+桌面为清单、判定、证据三栏；窄屏自然降为两栏或单栏。手机优先阅读来源，再提交判定。支持键盘焦点、主内容跳转、原生表单标签、减少动态效果偏好。
 
-1. **文件上传与原件读取**：当前接口只收 `report_text` 和内嵌 Evidence。建议增加授权校验的上传 / 解析接口，返回 `document_id`、版本、页数、页面文本与安全原件 URL；PDF 定位还需要页码和文本坐标（bbox 或字符区间）。
-2. **持久化与异步进度**：`ReviewManager` 为进程内存，同步运行 `run_review`，没有列表、分页、取消后的持久状态或 Agent 阶段流。建议改为持久化 Review Repository + 后台任务，并增加 `GET /v1/reviews`、轮询状态或 SSE 事件。
-3. **单条问题操作**：现有人工决策能提交三态判定与意见，但没有“编辑最终结论”“单条补充检索” endpoint。建议在 Finding/Claim 下增加版本化的人工修改记录与补充检索动作，并返回 `final_text`、操作人、时间及审计记录。
-4. **推理步骤**：当前有 `reasoning_summary` / 规则命中说明，但没有结构化 `ReasoningStep[]`。界面只连接真实 Evidence 与 Claim，并明确标出缺少步骤字段。
-5. **完整人工恢复**：`resume_review` 能保存当前挂起 Claim 的判定，但当还有后续 Claim 时不会继续运行图流程。建议通过真实 checkpoint 恢复剩余图节点，并返回新的状态 / 待办任务。
-6. **来源查看与结果文档**：现有 Evidence 有页码和片段，但没有 PDF 原件流或字符坐标；当前也没有 PDF / Excel 导出与独立 audit log API。界面提供 Evidence 片段、CSV 问题表和完整 API JSON，不伪称已定位原 PDF 或生成正式审计文档。
+原有 `styles-improved.css`、`styles-original-backup.css`、`lazy-loader.js`、`request-optimizer.js`、`store-enhanced.js` 等此前已有的未提交文件保留；当前入口只加载 `styles.css` 与 `src/main.js` 的实际模块依赖。
 
-默认 `server.py` 不注入 `BuildManager`，因此现有知识库 build/search 路由仍需在部署入口注入项目已有服务后才可调用。
+## 验证
+
+```bash
+npm ci
+npm run test:frontend
+.venv/bin/python -m pytest -q
+```
+
+浏览器验收覆盖上传、资料发布、检索、新建复核、人工判断、筛选草稿保留、原文对照、任务搜索、导出和响应式页面。实际模型效果仍依赖当前服务商、配置及参考资料，UI 验收不替代模型质量评估。
+
+## 证据内容渲染
+
+来源表格由 `src/evidence-renderer.js` 在惰性模板中解析并重建允许结构，按引用文字高亮。宽表支持展开阅读，复制摘录输出按行、制表符分隔的文本。
+
+PDF 预览使用只读 `GET /v1/documents/{document_id}/pages/{page}.png?highlight=...`，依赖 workbench 额外依赖中的 PyMuPDF；预览只在切换 PDF 视图后加载。原件不保存修改，扫描页无文字匹配时不生成高亮。现有 `.venv` 已安装该组件，新环境可安装 `pip install -e '.[workbench]'`。
+
+`linkedom` 仅为 DOM 单元测试开发依赖，浏览器运行时不加载 Node 包。

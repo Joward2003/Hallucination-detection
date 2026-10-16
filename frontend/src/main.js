@@ -1,3 +1,4 @@
+import {plainEvidenceText} from './evidence-renderer.js';
 import {workbenchApi} from './api.js';
 import {data as wb, refresh as refreshWorkbench, reviewScope, renderKnowledge, renderDataManagement, renderRuntime, renderRules, renderAudit, jobStatus} from './workbench.js';
 import { api, getApiBase, setApiBase } from './api.js';
@@ -5,7 +6,7 @@ import { adaptReview } from './adapter.js';
 import { readHistory, saveHistoryEntry, updateHistoryEntry, getHistoryEntry } from './store.js';
 import {
   downloadCSV, downloadJSON, esc, icon, renderDashboard, renderError, renderExport,
-  renderHistory, renderModulePlaceholder, renderNewReview, renderOverview,
+  filterFindings, renderHistory, renderNewReview, renderOverview,
   renderProgress, renderReviewSettings, renderSettings, renderShell, renderWorkspace,
 } from './ui.js';
 
@@ -14,14 +15,23 @@ const draft = {
   reportName: '', reportType: 'AI 生成报告', reportText: '', reportFileName: '',
   sourceFiles: [], companyName: '', period: '', reportId: '', kbVersion: '', reportDocumentId: '',
 };
-const workspaceState = { typeFilter: '', riskFilter: '', selectedEvidenceId: '', evidenceTab: 'source', compareMode: false };
+const workspaceState = { typeFilter: '', riskFilter: '', selectedEvidenceId: '', evidenceTab: 'source', compareMode: false, pendingOnly: false };
 const recordCache = new Map();
 const reviewCache = new Map();
 const loadingReviews = new Set();
 const humanDrafts = new Map();
 let health = null;
 let remoteTasks = [];
+let serverHistory = null;
+let decisionPending = false;
+let advanceReviewId='';
+let reviewPoll = null;
+let activeEntity = "";
+let activeCompany = "";
+const visibleHistory = () => serverHistory === null ? readHistory() : serverHistory.map(item=>({...getHistoryEntry(item.reviewId),...item}));
 let reportPending = false;
+let reportUploadPending=false;
+let sourceUploadPending=false;
 let progressError = '';
 
 function makeId(prefix) {
@@ -30,7 +40,7 @@ function makeId(prefix) {
 }
 
 function navSection(path) {
-  if (path.startsWith('/review/')) return '/review/new';
+  if (path.startsWith('/review/')) return path.startsWith('/review/new') ? '/review/new' : '/history';
   if (path.startsWith('/history')) return '/history';
   if (path.startsWith('/knowledge')) return '/knowledge';
   if (path.startsWith('/rules')) return '/rules';
@@ -59,21 +69,28 @@ function saveNormalizedHistory(review, meta) {
     findingCount: review.findings.length,
     summaryCounts: review.summaryCounts,
   };
+  if(serverHistory!==null){serverHistory=serverHistory.filter(h=>h.reviewId!==review.reviewId);serverHistory.unshift({...entry,savedAt:review.raw.created_at || new Date().toISOString()});}
+  remoteTasks=remoteTasks.filter(t=>t.review_id!==review.reviewId);
+  if(review.pendingTask?.status==='PENDING')remoteTasks.push({...review.pendingTask,review_id:review.reviewId,fact:review.findings.find(f=>f.id===review.pendingTask.fact_id)?.text});
   if (getHistoryEntry(review.reviewId)) updateHistoryEntry(review.reviewId, entry);
   else saveHistoryEntry(entry);
 }
 
 function selectedFindingFor(review) {
   const id = new URLSearchParams(location.search).get('finding');
-  if (id && review.findings.some((item) => item.id === id)) return review.findings.find((item) => item.id === id);
-  return review.findings.find((item) => (!workspaceState.typeFilter || item.type === workspaceState.typeFilter) && (!workspaceState.riskFilter || String(item.risk).toLowerCase() === workspaceState.riskFilter)) || review.findings[0] || null;
+
+  return filterFindings(review,workspaceState).find(f=>f.id===id) || filterFindings(review,workspaceState)[0] || null;
 }
 
 function render() {
+  const focusId = document.activeElement?.id;
+  const scrolls = [...document.querySelectorAll('.finding-nav-list,.detail-scroll,.evidence-body')].map(e=>[e.className,e.scrollTop]);
+  const decisions = document.querySelector('[name="decision"]:checked')?.value;
+  const openDetails = [...document.querySelectorAll('details[open]')].map(e=>e.className).filter(Boolean);
   const oldForm = document.querySelector('[data-human-form-key]');
   if (oldForm) humanDrafts.set(oldForm.dataset.humanFormKey, {
     values: Object.fromEntries([...oldForm.querySelectorAll('input[id],textarea[id]')].map(e => [e.id,e.value])),
-    evidence: [...oldForm.querySelectorAll('[name="human-evidence"]:checked')].map(e=>e.value)
+    evidence: [...oldForm.querySelectorAll('[name="human-evidence"]:checked')].map(e=>e.value), decision: decisions, openDetails
   });
   const path = window.location.pathname || '/dashboard';
   if (path === '/') {
@@ -83,29 +100,29 @@ function render() {
   const active = navSection(path);
   let body = '';
   if (path === '/dashboard') {
-    body = renderDashboard({ history: readHistory(), humanTasks: remoteTasks, health });
+    body = renderDashboard({ history: visibleHistory(), humanTasks: remoteTasks, health });
   } else if (path === '/review/new') {
-    body = renderNewReview(draft, readHistory());
+    body = renderNewReview(draft, visibleHistory());
   } else if (path === '/review/new/settings') {
     if (!draft.reportText.trim()) {
       navigate('/review/new', true);
       toast('请先填写报告正文。', true);
       return;
     }
-    body = reviewScope(draft) + renderReviewSettings(draft);
+    body = renderReviewSettings(draft).replace('<section class="panel settings-panel">', '<section class="panel settings-panel">'+reviewScope(draft));
   } else if (path === '/review/new/progress') {
     body = renderProgress(draft, null);
     if (progressError) body += '<div class="error-inline">' + esc(progressError) + '</div>';
   } else if (path === '/history') {
-    body = renderHistory(readHistory());
+    body = renderHistory(visibleHistory());
   } else if (path === '/settings') {
     body = renderSettings(getApiBase(), health);
   } else if (path === '/knowledge') {
-    body = renderKnowledge();
+    body = renderKnowledge(activeEntity);
   } else if (path === '/rules') {
     body = renderRules();
   } else if (path === '/data') {
-    body = renderDataManagement();
+    body = renderDataManagement(activeCompany);
   } else if (path === '/models') {
     body = renderRuntime();
   } else if (path.startsWith('/audit/')) {
@@ -136,18 +153,30 @@ function render() {
   }
   app.innerHTML = renderShell(active, body, health);
   bindPageInputs();
+  if(reportUploadPending || sourceUploadPending){
+    const next=document.querySelector('[data-action="to-settings"]');
+    if(next){next.disabled=true;next.textContent='正在解析上传资料…';next.setAttribute('aria-busy','true');}
+    const choose=document.querySelector('[data-action="choose-report"]');
+    if(choose && reportUploadPending){choose.disabled=true;choose.textContent='正在解析报告…';}
+  }
   const newForm = document.querySelector('[data-human-form-key]');
   const savedForm = newForm && humanDrafts.get(newForm.dataset.humanFormKey);
   if(savedForm) {
     newForm.querySelectorAll('input[id],textarea[id]').forEach(e=>{if(e.id in savedForm.values)e.value=savedForm.values[e.id];});
     newForm.querySelectorAll('[name="human-evidence"]').forEach(e=>e.checked=savedForm.evidence.includes(e.value));
+    newForm.querySelectorAll('[name="decision"]').forEach(e=>e.checked=e.value===savedForm.decision);
+    newForm.querySelectorAll('details').forEach(e=>{if(savedForm.openDetails?.includes(e.className))e.open=true;});
   }
+  scrolls.forEach(([cls,top])=>{const node=document.querySelector('.'+cls.split(' ').join('.'));if(node)node.scrollTop=top;});
+  if(workspaceState.resetDetailScroll){document.querySelector('.detail-scroll')?.scrollTo(0,0);document.querySelector('.evidence-body')?.scrollTo(0,0);workspaceState.resetDetailScroll=false;}
+  if(focusId)document.getElementById(focusId)?.focus({preventScroll:true});
 }
 
 function navigate(path, replace = false) {
   if (replace) window.history.replaceState({}, '', path);
   else window.history.pushState({}, '', path);
   progressError = '';
+  clearTimeout(reviewPoll);
   render();
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
@@ -157,7 +186,7 @@ async function refreshHealth() {
     await api.health();
     await refreshWorkbench();
     const records = await workbenchApi.get("/v1/reviews");
-    records.reverse().forEach(record => saveHistoryEntry({reviewId:record.review_id,reportId:record.report_id,reportName:record.report_name,status:record.status,savedAt:record.created_at,reportType:"金融信贷报告"}));
+    serverHistory = records.map(record=>({reviewId:record.review_id,reportId:record.report_id,reportName:record.report_name,status:record.status,savedAt:record.created_at,reportType:record.report_type || '金融信贷报告'}));
     health = true;
     try { remoteTasks = await api.humanTasks(); }
     catch { remoteTasks = []; }
@@ -176,8 +205,13 @@ async function loadReview(reviewId) {
     recordCache.set(reviewId, record);
     const normalized = adaptReview(record);
     reviewCache.set(reviewId, normalized);
+    if(advanceReviewId===reviewId && normalized.pendingTask?.status==='PENDING' && location.pathname.includes('/workspace')){
+      const target=new URL(location.href);target.searchParams.set('finding',normalized.pendingTask.fact_id);window.history.replaceState({},'',target.pathname+target.search);
+      workspaceState.selectedEvidenceId='';workspaceState.typeFilter='';workspaceState.riskFilter='';workspaceState.resetDetailScroll=true;advanceReviewId='';
+    }
+    if(advanceReviewId===reviewId && normalized.workflowStatus==='COMPLETED')advanceReviewId='';
     const saved = getHistoryEntry(reviewId);
-    saveNormalizedHistory(normalized, saved || { reportName: record.report_id, reportType: '金融报告' });
+    saveNormalizedHistory(normalized, {...saved,reportName:record.report_name || saved?.reportName || record.report_id,reportType:record.report_type || saved?.reportType || '金融报告'});
   } catch (error) {
     app.innerHTML = renderShell(navSection(location.pathname), renderError('无法读取复核结果', error.message), health);
   } finally {
@@ -185,7 +219,8 @@ async function loadReview(reviewId) {
   }
   if (reviewCache.has(reviewId)) render();
   const record = recordCache.get(reviewId);
-  if (record && ['QUEUED','RUNNING'].includes(record.status)) setTimeout(() => loadReview(reviewId), 1800);
+  clearTimeout(reviewPoll);
+  if (record && ['QUEUED','RUNNING'].includes(record.status) && location.pathname.startsWith('/review/'+encodeURIComponent(reviewId)+'/')) reviewPoll = setTimeout(() => loadReview(reviewId), 1800);
 }
 
 function bindPageInputs() {
@@ -209,15 +244,9 @@ function bindPageInputs() {
   if (type) type.addEventListener('change', () => { draft.reportType = type.value; });
 }
 
-function fileToText(file) {
-  if (file.size > 2 * 1024 * 1024) return Promise.reject(new Error('单个文本文件不能超过 2 MB。'));
-  if (!/\.(txt|md)$/i.test(file.name) && !['text/plain', 'text/markdown'].includes(file.type)) {
-    return Promise.reject(new Error('当前界面只读取 .txt / .md 文本文件；PDF、Word 和 Excel 需要后端解析接口。'));
-  }
-  return file.text();
-}
-
 async function loadReportFile(file) {
+  if(reportUploadPending)return;
+  reportUploadPending=true;render();
   try {
     const doc = await workbenchApi.upload(file);
     if (doc.status !== 'READY') throw new Error(doc.error || '报告解析失败');
@@ -227,11 +256,14 @@ async function loadReportFile(file) {
     draft.reportFileName = file.name;
     draft.reportDocumentId = doc.document_id;
     if (!draft.reportName.trim()) draft.reportName = file.name.replace(/\.[^.]+$/, '');
-    await refreshWorkbench(); render(); toast('报告原件已保存并解析。');
+    await refreshWorkbench(); toast('报告原件已保存并解析。');
   } catch (error) { toast(error.message, true); }
+  finally{reportUploadPending=false;render();}
 }
 
 async function addSourceFiles(files) {
+  if(sourceUploadPending)return;
+  sourceUploadPending=true;render();
   for (const file of Array.from(files || [])) {
     try {
       const doc = await workbenchApi.upload(file, {company:draft.companyName,period:draft.period});
@@ -239,23 +271,8 @@ async function addSourceFiles(files) {
       draft.sourceFiles.push({id:doc.document_id,name:doc.name});
     } catch (error) { toast(file.name + '：' + error.message,true); }
   }
-  await refreshWorkbench(); render();
-}
-
-function splitEvidence(source) {
-  let paragraphs = source.text.split(/\n\s*\n+/).map((part) => part.trim()).filter(Boolean);
-  if (paragraphs.length <= 1) paragraphs = source.text.split(/\r?\n/).map((part) => part.trim()).filter(Boolean);
-  if (!paragraphs.length && source.text.trim()) paragraphs = [source.text.trim()];
-  return paragraphs.map((content, index) => ({
-    evidence_id: source.id + '-E' + String(index + 1).padStart(3, '0'),
-    content,
-    source: source.name,
-    page: null,
-    evidence_type: 'text',
-    document_id: source.id,
-    document_version: 'uploaded-text-v1',
-    ...(draft.period.trim() ? { period: draft.period.trim() } : {}),
-  }));
+  try{await refreshWorkbench();}catch(error){toast(error.message,true);}
+  sourceUploadPending=false;render();
 }
 
 async function startReview() {
@@ -321,17 +338,20 @@ async function startReview() {
 }
 
 async function submitHumanDecision(decision) {
+  if(decisionPending)return;
   const reviewId = decodeURIComponent(location.pathname.split('/')[2] || '');
   const review = reviewCache.get(reviewId);
   if (!review) return toast('当前复核结果尚未载入。', true);
   const finding = selectedFindingFor(review);
-  if (!finding?.humanTask || finding.humanTask.status !== 'PENDING') return toast('当前 Finding 没有待提交的后端人工任务。', true);
+  if (!finding?.humanTask || finding.humanTask.status !== 'PENDING') return toast('当前复核项没有待提交的人工任务。', true);
   const comment = document.getElementById('human-comment')?.value.trim() || '';
-  if (!comment) return toast('请填写人工复核理由，作为审计底稿。',true);
+  if (!comment) { document.getElementById('human-comment')?.focus(); document.getElementById('decision-error').textContent='请填写判定理由，作为复核底稿。'; return; }
+  if (!decision) { document.getElementById('decision-error').textContent='请选择最终判定。'; return; }
   const selectedEvidence = [...document.querySelectorAll('[name="human-evidence"]:checked')].map(e=>e.value);
   const finalText = document.getElementById('human-correction')?.value.trim() || '';
-  const button = document.querySelector('[data-human-decision="' + decision + '"]');
-  if (button) button.disabled = true;
+  const button = document.querySelector('[data-action="submit-decision"]');
+  decisionPending=true;
+  if (button) {button.disabled=true;button.textContent='正在保存判定…';}
   try {
     const record = await api.submitDecision(reviewId, {
       task_version: finding.humanTask.task_version,
@@ -346,17 +366,21 @@ async function submitHumanDecision(decision) {
     reviewCache.set(reviewId, normalized);
     const saved = getHistoryEntry(reviewId) || { reportName: reviewId, reportType: '金融报告' };
     saveNormalizedHistory(normalized, saved);
+    advanceReviewId=reviewId;
+    humanDrafts.delete(reviewId+':'+finding.id);
+    document.querySelector('[data-human-form-key]')?.removeAttribute('data-human-form-key');
     render();
     toast('人工判定已保存，流程将继续剩余复核点。');
     loadReview(reviewId);
 
   } catch (error) {
-    if (button) button.disabled = false;
+    if (button) {button.disabled=false;button.textContent='保存判定并继续';}
     toast(error.message, true);
-  }
+  } finally {decisionPending=false;}
 }
 
 function selectFinding(id) {
+  workspaceState.resetDetailScroll=true;
   workspaceState.selectedEvidenceId = '';
   workspaceState.evidenceTab = 'source';
   const url = new URL(location.href);
@@ -370,9 +394,10 @@ function shiftFinding(direction) {
   const review = reviewCache.get(reviewId);
   if (!review) return;
   const currentId = new URLSearchParams(location.search).get('finding');
-  const index = review.findings.findIndex((item) => item.id === currentId);
-  const next = Math.max(0, Math.min(review.findings.length - 1, (index < 0 ? 0 : index) + direction));
-  if (review.findings[next]) selectFinding(review.findings[next].id);
+  const list = filterFindings(review,workspaceState);
+  const index = list.findIndex(item=>item.id===currentId);
+  const next = Math.max(0, Math.min(list.length-1,(index<0?0:index)+direction));
+  if(list[next])selectFinding(list[next].id);
 }
 
 document.addEventListener('click', async (event) => {
@@ -398,19 +423,24 @@ document.addEventListener('click', async (event) => {
   const removeSource = event.target.closest('[data-remove-source]');
   if (removeSource) { draft.sourceFiles.splice(Number(removeSource.dataset.removeSource), 1); render(); return; }
   const entity = event.target.closest('[data-entity]');
-  if (entity) { app.innerHTML = renderShell('/knowledge', renderKnowledge(entity.dataset.entity), health); return; }
+  if(entity){activeEntity=entity.dataset.entity;render();return;}
   const company = event.target.closest('[data-company]');
-  if (company) { const { renderDataManagement: rdm } = await import('./workbench.js'); const active = company.dataset.company; const cur = document.querySelector('.entity-card.active[data-company]'); app.innerHTML = renderShell('/data', rdm(cur && cur.dataset.company === active ? '' : active), health); return; }
+  if(company){activeCompany=activeCompany===company.dataset.company?'':company.dataset.company;render();return;}
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
+  if(action==='evidence-extracted' || action==='evidence-pdf'){workspaceState.sourceView=action==='evidence-pdf'?'pdf':'extracted';render();return;}
+  if(action==='toggle-evidence-width'){workspaceState.evidenceExpanded=!workspaceState.evidenceExpanded;workspaceState.resetDetailScroll=true;render();return;}
+  if(action==='submit-decision') {await submitHumanDecision(document.querySelector('[name="decision"]:checked')?.value);return;}
+  if(action==='clear-filters'){workspaceState.typeFilter='';workspaceState.riskFilter='';workspaceState.pendingOnly=false;render();return;}
   if (action === 'choose-report') document.getElementById('report-file')?.click();
-  else if (action === 'clear-report-file') { draft.reportFileName = ''; render(); }
+  else if (action === 'clear-report-file') { draft.reportFileName = ''; draft.reportDocumentId=''; render(); }
   else if (action === 'to-settings') {
+    if(reportUploadPending || sourceUploadPending)return;
     draft.reportName = document.getElementById('report-name')?.value.trim() || '';
     draft.reportText = document.getElementById('report-text')?.value || '';
     draft.reportType = document.getElementById('report-type')?.value || draft.reportType;
-    if (!draft.reportText.trim()) return toast('请填写报告正文或导入文本文件。', true);
+    if (!draft.reportText.trim()) return toast('请填写报告正文，或导入报告文件。', true);
     navigate('/review/new/settings');
   } else if (action === 'start-review') await startReview();
   else if (action === 'refresh-health') { await refreshHealth(); toast(health ? '复核服务连接正常。' : '无法连接复核服务。', !health); }
@@ -430,7 +460,7 @@ document.addEventListener('click', async (event) => {
     const review = reviewCache.get(reviewId);
     const finding = review ? selectedFindingFor(review) : null;
     const selected = finding?.evidence.find((item) => item.evidence_id === workspaceState.selectedEvidenceId) || finding?.evidence[0];
-    if (selected?.content) navigator.clipboard?.writeText(selected.content).then(() => toast('Evidence 原文已复制。')).catch(() => toast('浏览器未允许剪贴板访问。', true));
+    if (selected?.content) navigator.clipboard?.writeText(plainEvidenceText(selected.content)).then(() => toast('证据摘录已复制。')).catch(() => toast('浏览器未允许剪贴板访问。', true));
   } else if (action === 'save-api-base') {
     setApiBase(document.getElementById('api-base')?.value || '');
     await refreshHealth();
@@ -447,6 +477,9 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  if(event.target.id==='selected-evidence'){workspaceState.selectedEvidenceId=event.target.value;render();return;}
+  if(event.target.id==='pending-only'){workspaceState.pendingOnly=event.target.checked;render();return;}
+  if(event.target.id==='history-status')filterHistory();
   if (event.target.id === 'report-file' && event.target.files?.[0]) loadReportFile(event.target.files[0]);
   else if (event.target.id === 'source-files' && event.target.files?.length) addSourceFiles(event.target.files);
   else if (event.target.id === 'filter-type') { workspaceState.typeFilter = event.target.value; render(); }
@@ -501,7 +534,9 @@ async function handleWorkbenchClick(event) {
   const button=event.target.closest('[data-wb-action]');
   if(!button&&!cancelBuild&&!cancelReview&&!continueReview)return false;
   const trigger=button||cancelBuild||cancelReview||continueReview;
-  trigger.disabled=true;
+  const originalLabel=trigger.innerHTML;
+  trigger.disabled=true;trigger.setAttribute('aria-busy','true');
+  if(button)trigger.textContent='处理中…';
   try{
     if(cancelBuild){await workbenchApi.post('/v1/knowledge-bases/builds/'+cancelBuild.dataset.cancelBuild+'/cancel');await refreshWorkbench();render();return true;}
     if(cancelReview){await workbenchApi.post('/v1/reviews/'+cancelReview.dataset.cancelReview+'/cancel');loadReview(cancelReview.dataset.cancelReview);return true;}
@@ -521,6 +556,7 @@ async function handleWorkbenchClick(event) {
     }
     if(action==='build'){
       const ids=[...document.querySelectorAll('[name="kb-doc"]:checked')].map(e=>e.value);
+      if(!ids.length)throw new Error('请先勾选至少一份解析完成的参考资料。');
       const payload={document_ids:ids,kb_id:document.getElementById('kb-id').value,name:document.getElementById('kb-name').value};
       const build=await workbenchApi.post('/v1/knowledge-bases/builds',payload);await refreshWorkbench();render();toast('建库已开始，工作底稿会逐步保存。');pollBuild(build.build_id);
     }
@@ -535,11 +571,11 @@ async function handleWorkbenchClick(event) {
       await refreshWorkbench();render();toast('本机 API 配置已保存；Key 不进入浏览器存储。');
     }
     if(action==='check-provider'){
-      const target=document.getElementById('provider-result');target.textContent='正在请求真实 API…';
+      const target=document.getElementById('provider-result');target.textContent='正在请求模型服务…';
       const result=await workbenchApi.post('/v1/provider/check');target.textContent=result.ok?'API 已连通：'+result.reply:'连接失败：'+result.error;toast(result.ok?'本次真实 API 请求成功。':result.error,!result.ok);
     }
   }catch(error){toast(error.message,true);}
-  finally{trigger.disabled=false;}
+  finally{trigger.disabled=false;trigger.removeAttribute('aria-busy');trigger.innerHTML=originalLabel;}
   return true;
 }
 
@@ -562,3 +598,34 @@ function positionEvidenceCard(event) {
 }
 document.addEventListener('mouseover',positionEvidenceCard);
 document.addEventListener('focusin',positionEvidenceCard);
+
+function filterHistory(){
+  const search=(document.getElementById('history-search')?.value || '').toLowerCase();
+  const status=document.getElementById('history-status')?.value || '';
+  let shown=0;
+  document.querySelectorAll('.history-panel tbody tr').forEach(row=>{
+    const button=row.querySelector('[data-open-review]');
+    if(!button)return;
+    const item=visibleHistory().find(h=>h.reviewId===button.dataset.openReview);
+    row.hidden=!(row.textContent.toLowerCase().includes(search) && (!status || item?.status===status));
+    if(!row.hidden)shown++;
+  });
+  const count=document.getElementById('history-matches');if(count)count.textContent=shown+' 个匹配任务';
+}
+document.addEventListener('input',event=>{if(event.target.id==='history-search')filterHistory();});
+
+// Capture image events because load/error do not bubble.
+document.addEventListener('load', event=>{
+  if(!event.target.matches?.('[data-pdf-page-image]'))return;
+  const viewer=event.target.closest('.pdf-source-view');
+  viewer.classList.remove('is-loading');
+  viewer.querySelector('.pdf-load-status').textContent='PDF 来源页已加载，可滚动查看或展开阅读。';
+},true);
+document.addEventListener('error', event=>{
+  if(!event.target.matches?.('[data-pdf-page-image]'))return;
+  const viewer=event.target.closest('.pdf-source-view');
+  viewer.classList.remove('is-loading');
+  event.target.hidden=true;
+  viewer.querySelector('.pdf-load-status').textContent='PDF 来源页加载失败。';
+  viewer.querySelector('.pdf-preview-error').hidden=false;
+},true);

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from credit_review.domain.errors import ConflictError
@@ -129,6 +129,20 @@ def create_workbench_app(root=None, backend=None, gateway_factory=None):
     def original(ident: str):
         path, doc = knowledge.source_path(ident)
         return FileResponse(path, filename=doc['name'], media_type='application/pdf' if doc['suffix'] == '.pdf' else 'application/octet-stream', content_disposition_type='inline' if doc['suffix'] == '.pdf' else 'attachment')
+    @app.get('/v1/documents/{ident}/pages/{page}.png')
+    def source_page_preview(ident: str, page: int, highlight: str = Query('', max_length=2000)):
+        from .pdf_preview import render_page
+        path, doc = knowledge.source_path(ident)
+        if doc['suffix'].lower() != '.pdf':
+            raise ValueError('此来源不是 PDF，请查看提取后的内容。')
+        try:
+            image, matches = render_page(path, page, highlight)
+        except ImportError:
+            raise HTTPException(status_code=503, detail='PDF 预览组件未安装，请安装 workbench 依赖或查看渲染内容。')
+        except IndexError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return Response(image, media_type='image/png', headers={'X-Evidence-Highlights': str(matches), 'X-Source-Page': str(page)})
+
     @app.get('/v1/documents/{ident}/view', response_class=HTMLResponse)
     def source_view(ident: str):
         doc = store.get('document', ident)

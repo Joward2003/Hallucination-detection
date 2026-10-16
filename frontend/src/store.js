@@ -11,7 +11,7 @@ export function readHistory() {
 
 export function saveHistoryEntry(entry) {
   const items = readHistory().filter((item) => item.reviewId !== entry.reviewId);
-  items.unshift({ ...entry, savedAt: new Date().toISOString() });
+  items.unshift({ ...entry, savedAt: entry.savedAt || new Date().toISOString() });
   localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 100)));
 }
 

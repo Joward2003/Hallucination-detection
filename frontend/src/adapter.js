@@ -20,9 +20,11 @@ function asArray(value) { return Array.isArray(value) ? value : []; }
 function spanKind(result,context){return context.childById.get(result.fact_id)?.review_kind;}
 function toFinding(result, context) {
   const factId = result.fact_id || result.child_id || 'unknown-fact';
-  const evidence = asArray(result.evidence);
+  const evidence = [...new Map(asArray(result.evidence).map((item,index)=>[item.evidence_id || index,item])).values()];
   const assessments = asArray(result.assessments);
   const risk = result.risk_decision || {};
+  const requirements = [...asArray(result.evidence_requirements),...asArray(result.retrieval_plan?.requests)];
+  const needById = new Map(requirements.map(need=>[need.need_id,need.description || need.query_text]));
   const issueTypes = asArray(result.issue_types);
   const type = (issueTypes.includes('fact_mismatch') ? 'fact_mismatch' : issueTypes[0]) || (spanKind(result,context) === 'risk_omission' ? 'risk_omission' : result.status === 'SUPPORTED' ? 'supported' : 'unclassified');
   const assessmentById = new Map(assessments.map((item) => [item.evidence_id, item]));
@@ -54,7 +56,8 @@ function toFinding(result, context) {
     })),
     queries: asArray(result.queries),
     trace: asArray(result.retrieval_trace),
-    missingNeeds: asArray(result.missing_needs),
+    missingNeedIds: asArray(result.missing_needs),
+    missingNeeds: asArray(result.missing_needs).map(id=>needById.get(id) || (/^[A-Z]-[A-Za-z0-9_-]+$/.test(id)?'尚缺少一项核验所需资料，详细需求见流程底稿。':id)),
     numericChecks: asArray(result.numeric_checks),
     ruleHits: asArray(result.rule_hits),
     humanDecision: result.human_decision || null,
@@ -79,6 +82,8 @@ function currentPendingFinding(state, context) {
     queries: asArray(state.current_queries),
     retrieval_trace: asArray(state.retrieval_trace),
     missing_needs: asArray(state.missing_needs),
+    evidence_requirements: asArray(state.evidence_requirements),
+    retrieval_plan: state.retrieval_plan,
     numeric_checks: asArray(state.numeric_checks),
     rule_hits: asArray(state.rule_hits),
     risk_decision: state.risk_decision || {},
@@ -97,7 +102,7 @@ export function adaptReview(record) {
       childById.set(child.fact_id, { ...child, parent_id: parent.parent_id, parent_text: parent.parent_text });
     }
   }
-  const context = { childById, pendingTask: state.human_task || null,reportText:state.original_input || '' };
+  const context = { childById, pendingTask: ['CANCELLED','FAILED','INTERRUPTED','COMPLETED'].includes(record.status) ? null : state.human_task || null,reportText:state.original_input || '' };
   const completed = asArray(state.completed_results).length ? state.completed_results : asArray(result.completed_results);
   const findings = completed.map((item) => toFinding(item, context));
   const pending = currentPendingFinding(state, context);

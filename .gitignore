@@ -29,3 +29,6 @@ env/
 # Local workbench: private sources, durable jobs, working papers and credentials
 .local-data/
 .env.before-workbench
+
+# Frontend test dependencies (not needed at runtime)
+node_modules/
